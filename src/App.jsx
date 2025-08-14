@@ -1,0 +1,3022 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import "./App.css";
+
+// ---------- Utilities ----------
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const rnd = (min = 0, max = 1) => Math.random() * (max - min) + min;
+const irnd = (min, max) => Math.floor(rnd(min, max + 1));
+const chance = (p) => Math.random() < p; // p in [0,1]
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const deepClone = (obj) => JSON.parse(JSON.stringify(obj));
+const fmt = (n, d = 1) => Number(n).toFixed(d);
+const sum = (arr) => arr.reduce((a, b) => a + b, 0);
+
+// Convert hex color to RGB values for glassmorphism effects
+const hexToRgb = (hex) => {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16)
+  } : {r: 59, g: 130, b: 246}; // Default to blue if parsing fails
+};
+
+// Player ranking and Hall of Fame functions
+const calculatePlayerScore = (game) => {
+  const career = game.career;
+  if (!career || !career.seasons || career.seasons.length === 0) return 0;
+  
+  const totals = career.totals || {};
+  const seasons = career.seasons;
+  
+  // Base statistical contribution - safely handle missing data
+  const avgPPG = (totals.points || 0) / Math.max(totals.games || 1, 1);
+  const avgRPG = (totals.rebounds || 0) / Math.max(totals.games || 1, 1);
+  const avgAPG = (totals.assists || 0) / Math.max(totals.games || 1, 1);
+  const avgPER = totals.per && totals.per.length > 0 ? 
+    totals.per.reduce((a,b) => a+b, 0) / totals.per.length : 15.0;
+  
+  // Accolades multiplier - use correct data structure
+  const championships = totals.titles || 0;
+  const finalsMVPs = totals.finalsMVPs || 0;
+  const allStars = totals.allstars || 0;
+  const mvps = totals.mvps || 0;
+  const dpoys = totals.dpoys || 0;
+  
+  // Calculate base score
+  let score = (avgPPG * 2) + (avgRPG * 1.5) + (avgAPG * 2) + (avgPER * 3);
+  
+  // Add accolade bonuses
+  score += championships * 50;
+  score += finalsMVPs * 30;
+  score += mvps * 40;
+  score += allStars * 5;
+  score += dpoys * 15;
+  
+  // Longevity bonus
+  score += seasons.length * 2;
+  
+  return Math.round(Math.max(0, score));
+};
+
+const getHallOfFameChance = (game) => {
+  const career = game.career;
+  if (!career || !career.seasons || career.seasons.length === 0) return 0;
+  
+  const score = calculatePlayerScore(game);
+  const seasons = career.seasons.length;
+  const totals = career.totals || {};
+  const championships = totals.titles || 0;
+  const mvps = totals.mvps || 0;
+  
+  let chance = Math.min(90, score / 10);
+  
+  // Minimum requirements
+  if (seasons < 3) chance = Math.min(chance, 10);
+  if (championships === 0 && mvps === 0) chance = Math.min(chance, 60);
+  
+  return Math.round(Math.max(0, chance));
+};
+
+const generateCurrentLeagueRankings = (game) => {
+  // Generate mock current season stats for top players
+  const mockPlayers = [
+    { name: "Luka Dončić", team: "DAL", ppg: 31.2, rpg: 8.9, apg: 9.1, per: 29.8 },
+    { name: "Jayson Tatum", team: "BOS", ppg: 28.5, rpg: 8.2, apg: 4.8, per: 27.1 },
+    { name: "Nikola Jokić", team: "DEN", ppg: 26.8, rpg: 12.4, apg: 8.9, per: 31.2 },
+    { name: "Giannis Antetokounmpo", team: "MIL", ppg: 29.1, rpg: 11.2, apg: 6.1, per: 30.5 },
+    { name: "Joel Embiid", team: "PHI", ppg: 27.9, rpg: 10.8, apg: 3.2, per: 28.9 }
+  ];
+  
+  // Add player's current season stats if available
+  const seasons = game.career?.seasons || [];
+  const currentSeason = seasons[seasons.length - 1];
+  if (currentSeason && currentSeason.averages) {
+    const playerStats = {
+      name: `${game.firstName || 'Player'} ${game.lastName || ''}`,
+      team: game.team || 'N/A',
+      ppg: currentSeason.averages.pts || 0,
+      rpg: currentSeason.averages.reb || 0,
+      apg: currentSeason.averages.ast || 0,
+      per: currentSeason.averages.per || 15.0,
+      isPlayer: true
+    };
+    
+    mockPlayers.push(playerStats);
+  }
+  
+  // Sort by PER and assign rankings
+  mockPlayers.sort((a, b) => b.per - a.per);
+  return mockPlayers.map((player, index) => ({
+    ...player,
+    rank: index + 1
+  }));
+};
+
+const generateAllTimeRankings = (game) => {
+  // All-time greats for comparison
+  const allTimeGreats = [
+    { name: "Michael Jordan", score: 850, championships: 6, mvps: 5 },
+    { name: "LeBron James", score: 820, championships: 4, mvps: 4 },
+    { name: "Kareem Abdul-Jabbar", score: 800, championships: 6, mvps: 6 },
+    { name: "Magic Johnson", score: 780, championships: 5, mvps: 3 },
+    { name: "Larry Bird", score: 760, championships: 3, mvps: 3 },
+    { name: "Tim Duncan", score: 740, championships: 5, mvps: 2 },
+    { name: "Shaquille O'Neal", score: 720, championships: 4, mvps: 1 },
+    { name: "Kobe Bryant", score: 710, championships: 5, mvps: 1 },
+    { name: "Hakeem Olajuwon", score: 690, championships: 2, mvps: 1 },
+    { name: "Bill Russell", score: 680, championships: 11, mvps: 5 }
+  ];
+  
+  // Add player if they have completed seasons
+  const seasons = game.career?.seasons || [];
+  if (seasons.length > 0) {
+    const playerScore = calculatePlayerScore(game);
+    const totals = game.career?.totals || {};
+    const playerEntry = {
+      name: `${game.firstName || 'Player'} ${game.lastName || ''}`,
+      score: playerScore,
+      championships: totals.titles || 0,
+      mvps: totals.mvps || 0,
+      isPlayer: true
+    };
+    
+    allTimeGreats.push(playerEntry);
+  }
+  
+  // Sort by score and assign rankings
+  allTimeGreats.sort((a, b) => b.score - a.score);
+  return allTimeGreats.map((player, index) => ({
+    ...player,
+    rank: index + 1
+  })).slice(0, 15); // Top 15
+};
+
+// Calculate age-based performance multiplier
+const getAgeMultiplier = (age) => {
+  if (age <= 23) return 1.0; // Young players at baseline
+  if (age <= 26) return 1.0 + (age - 23) * 0.05; // Gradual improvement: 1.05, 1.10, 1.15
+  if (age === 27) return 1.2; // Peak performance age
+  if (age <= 30) return 1.2 - (age - 27) * 0.05; // Gradual decline from peak: 1.15, 1.10, 1.05
+  if (age <= 35) return 1.0 - (age - 30) * 0.04; // Noticeable decline: 0.96, 0.92, 0.88, 0.84, 0.80
+  if (age <= 38) return 0.8 - (age - 35) * 0.08; // Sharp decline: 0.72, 0.64, 0.56
+  return 0.5; // Veteran minimum performance
+};
+
+// Check if player should be forced to retire
+const shouldForceRetirement = (player, seasonAverages) => {
+  if (player.age < 35) return false; // No forced retirement before 35
+  
+  // Define minimum thresholds for continuing career
+  const minThresholds = {
+    points: 3.0,
+    rebounds: 1.5,
+    assists: 1.0,
+    minutes: 8.0,
+    overall: 55
+  };
+  
+  return (
+    seasonAverages.points < minThresholds.points &&
+    seasonAverages.rebounds < minThresholds.rebounds &&
+    seasonAverages.assists < minThresholds.assists &&
+    seasonAverages.minutes < minThresholds.minutes
+  ) || player.ratings.overall < minThresholds.overall;
+};
+
+const STORAGE_KEY = "basketball-life-save-v1";
+
+// ---------- Data ----------
+const FIRST_NAMES = [
+  "Jalen","Zion","Luka","Jaiden","Marcus","CJ","Devin","Evan","Tyrese","Jamal",
+  "Darius","Kyrie","Jayson","Kobe","Trey","Jaxson","Nikola","Gianni","Anthony","Victor",
+  "Scoot","Micah","Paolo","Cade","Keegan","Bam","Trae","LaMelo","Shai","Brandon"
+];
+const LAST_NAMES = [
+  "Johnson","Williams","Miller","Davis","Brown","Wilson","Moore","Taylor","Anderson","Thomas",
+  "Jackson","White","Harris","Martin","Thompson","Garcia","Martinez","Robinson","Clark","Rodriguez",
+  "Young","Allen","King","Wright","Lopez","Hill","Scott","Green","Adams","Baker"
+];
+
+// ---------- Game Data ----------
+
+const POSITIONS = ["PG","SG","SF","PF","C"];
+const SKILLS = ["shooting","finishing","defense","playmaking","rebounding","athleticism"];
+
+const NBA_TEAMS = {
+  "Lakers": { 
+    name: "Los Angeles Lakers", 
+    strength: 85, 
+    colors: { primary: "#552583", secondary: "#FDB927", text: "#FFFFFF" },
+    conference: "West"
+  },
+  "Warriors": { 
+    name: "Golden State Warriors", 
+    strength: 88, 
+    colors: { primary: "#1D428A", secondary: "#FFC72C", text: "#FFFFFF" },
+    conference: "West"
+  },
+  "Celtics": { 
+    name: "Boston Celtics", 
+    strength: 90, 
+    colors: { primary: "#007A33", secondary: "#BA9653", text: "#FFFFFF" },
+    conference: "East"
+  },
+  "Heat": { 
+    name: "Miami Heat", 
+    strength: 82, 
+    colors: { primary: "#98002E", secondary: "#F9A01B", text: "#FFFFFF" },
+    conference: "East"
+  },
+  "Nets": { 
+    name: "Brooklyn Nets", 
+    strength: 75, 
+    colors: { primary: "#000000", secondary: "#FFFFFF", text: "#FFFFFF" },
+    conference: "East"
+  },
+  "Knicks": { 
+    name: "New York Knicks", 
+    strength: 83, 
+    colors: { primary: "#006BB6", secondary: "#F58426", text: "#FFFFFF" },
+    conference: "East"
+  },
+  "Bulls": { 
+    name: "Chicago Bulls", 
+    strength: 77, 
+    colors: { primary: "#CE1141", secondary: "#000000", text: "#FFFFFF" },
+    conference: "East"
+  },
+  "76ers": { 
+    name: "Philadelphia 76ers", 
+    strength: 84, 
+    colors: { primary: "#006BB6", secondary: "#ED174C", text: "#FFFFFF" },
+    conference: "East"
+  },
+  "Nuggets": { 
+    name: "Denver Nuggets", 
+    strength: 92, 
+    colors: { primary: "#0E2240", secondary: "#FEC524", text: "#FFFFFF" },
+    conference: "West"
+  },
+  "Clippers": { 
+    name: "LA Clippers", 
+    strength: 81, 
+    colors: { primary: "#C8102E", secondary: "#1D428A", text: "#FFFFFF" },
+    conference: "West"
+  },
+  "Suns": { 
+    name: "Phoenix Suns", 
+    strength: 86, 
+    colors: { primary: "#1D1160", secondary: "#E56020", text: "#FFFFFF" },
+    conference: "West"
+  },
+  "Mavericks": { 
+    name: "Dallas Mavericks", 
+    strength: 87, 
+    colors: { primary: "#00538C", secondary: "#002B5E", text: "#FFFFFF" },
+    conference: "West"
+  },
+  "Rockets": { 
+    name: "Houston Rockets", 
+    strength: 72, 
+    colors: { primary: "#CE1141", secondary: "#000000", text: "#FFFFFF" },
+    conference: "West"
+  },
+  "Spurs": { 
+    name: "San Antonio Spurs", 
+    strength: 70, 
+    colors: { primary: "#C4CED4", secondary: "#000000", text: "#000000" },
+    conference: "West"
+  },
+  "Jazz": { 
+    name: "Utah Jazz", 
+    strength: 74, 
+    colors: { primary: "#002B5C", secondary: "#F9A01B", text: "#FFFFFF" },
+    conference: "West"
+  },
+  "Trail Blazers": { 
+    name: "Portland Trail Blazers", 
+    strength: 68, 
+    colors: { primary: "#E03A3E", secondary: "#000000", text: "#FFFFFF" },
+    conference: "West"
+  },
+  "Kings": { 
+    name: "Sacramento Kings", 
+    strength: 76, 
+    colors: { primary: "#5A2D81", secondary: "#63727A", text: "#FFFFFF" },
+    conference: "West"
+  },
+  "Thunder": { 
+    name: "Oklahoma City Thunder", 
+    strength: 89, 
+    colors: { primary: "#007AC1", secondary: "#EF3B24", text: "#FFFFFF" },
+    conference: "West"
+  },
+  "Timberwolves": { 
+    name: "Minnesota Timberwolves", 
+    strength: 85, 
+    colors: { primary: "#0C2340", secondary: "#236192", text: "#FFFFFF" },
+    conference: "West"
+  },
+  "Pelicans": { 
+    name: "New Orleans Pelicans", 
+    strength: 73, 
+    colors: { primary: "#0C2340", secondary: "#C8102E", text: "#FFFFFF" },
+    conference: "West"
+  },
+  "Grizzlies": { 
+    name: "Memphis Grizzlies", 
+    strength: 78, 
+    colors: { primary: "#5D76A9", secondary: "#12173F", text: "#FFFFFF" },
+    conference: "West"
+  },
+  "Hawks": { 
+    name: "Atlanta Hawks", 
+    strength: 79, 
+    colors: { primary: "#E03A3E", secondary: "#C1D32F", text: "#FFFFFF" },
+    conference: "East"
+  },
+  "Hornets": { 
+    name: "Charlotte Hornets", 
+    strength: 71, 
+    colors: { primary: "#1D1160", secondary: "#00788C", text: "#FFFFFF" },
+    conference: "East"
+  },
+  "Magic": { 
+    name: "Orlando Magic", 
+    strength: 80, 
+    colors: { primary: "#0077C0", secondary: "#C4CED4", text: "#FFFFFF" },
+    conference: "East"
+  },
+  "Pistons": { 
+    name: "Detroit Pistons", 
+    strength: 66, 
+    colors: { primary: "#C8102E", secondary: "#1D42BA", text: "#FFFFFF" },
+    conference: "East"
+  },
+  "Pacers": { 
+    name: "Indiana Pacers", 
+    strength: 81, 
+    colors: { primary: "#002D62", secondary: "#FDBB30", text: "#FFFFFF" },
+    conference: "East"
+  },
+  "Cavaliers": { 
+    name: "Cleveland Cavaliers", 
+    strength: 84, 
+    colors: { primary: "#860038", secondary: "#FDBB30", text: "#FFFFFF" },
+    conference: "East"
+  },
+  "Raptors": { 
+    name: "Toronto Raptors", 
+    strength: 75, 
+    colors: { primary: "#CE1141", secondary: "#000000", text: "#FFFFFF" },
+    conference: "East"
+  },
+  "Wizards": { 
+    name: "Washington Wizards", 
+    strength: 69, 
+    colors: { primary: "#002B5C", secondary: "#E31837", text: "#FFFFFF" },
+    conference: "East"
+  },
+  "Bucks": { 
+    name: "Milwaukee Bucks", 
+    strength: 86, 
+    colors: { primary: "#00471B", secondary: "#EEE1C6", text: "#FFFFFF" },
+    conference: "East"
+  }
+};
+
+const TEAMS = Object.keys(NBA_TEAMS);
+
+const ARENAS = ["Fieldhouse","Coliseum","Garden","Forum","Center","Pavilion","Dome"]; 
+
+const ARCHETYPES = {
+  Scorer:      { shooting: 78, finishing: 70, playmaking: 62, defense: 58, rebounding: 52, stamina: 65, dunking: 68, passing: 60, leadership: 55 },
+  Playmaker:   { shooting: 68, finishing: 66, playmaking: 80, defense: 60, rebounding: 50, stamina: 70, dunking: 55, passing: 85, leadership: 75 },
+  TwoWay:      { shooting: 70, finishing: 68, playmaking: 60, defense: 78, rebounding: 62, stamina: 72, dunking: 65, passing: 65, leadership: 68 },
+  Stretch:     { shooting: 80, finishing: 60, playmaking: 58, defense: 60, rebounding: 72, stamina: 60, dunking: 50, passing: 62, leadership: 58 },
+  Slasher:     { shooting: 62, finishing: 82, playmaking: 66, defense: 62, rebounding: 56, stamina: 75, dunking: 80, passing: 68, leadership: 60 },
+  Big:         { shooting: 58, finishing: 76, playmaking: 54, defense: 72, rebounding: 82, stamina: 68, dunking: 78, passing: 52, leadership: 65 },
+};
+
+const AWARDS = ["MVP","DPOY","6MOY","MIP","Scoring Title","All-Star","Finals MVP","ROY"];
+
+const SHOE_BRANDS = [
+  { name: "AirJordan", minOverall: 75, minFollowers: 100000, base: 400, risk: 0.03 },
+  { name: "Nike", minOverall: 70, minFollowers: 50000, base: 350, risk: 0.04 },
+  { name: "Adidas", minOverall: 68, minFollowers: 40000, base: 280, risk: 0.05 },
+  { name: "Puma", minOverall: 65, minFollowers: 30000, base: 220, risk: 0.06 },
+  { name: "Under Armour", minOverall: 62, minFollowers: 20000, base: 180, risk: 0.07 },
+  { name: "NewBalance", minOverall: 60, minFollowers: 15000, base: 150, risk: 0.08 },
+];
+
+const PREMIUM_SERVICES = [
+  { name: "Private Chef", cost: 50, healthBoost: 15, peakBoost: 5, duration: 4 },
+  { name: "Personal Trainer", cost: 80, ratingBoost: 2, peakBoost: 10, duration: 6 },
+  { name: "Mental Coach", cost: 60, moraleBoost: 20, leadershipBoost: 3, duration: 5 },
+  { name: "Recovery Specialist", cost: 70, healthBoost: 25, peakBoost: 15, duration: 4 },
+  { name: "Media Training", cost: 40, followersBoost: 10000, duration: 3 },
+];
+
+// ---------- Generators ----------
+function genName(){ return `${pick(FIRST_NAMES)} ${pick(LAST_NAMES)}`; }
+function genTeam(){ return pick(TEAMS); }
+function genArena(team){ return `${team.split(" ")[0]} ${pick(ARENAS)}`; }
+function startingAge(){ return irnd(18, 22); }
+function pickArchetype(){ return pick(Object.keys(ARCHETYPES)); }
+
+function baseRatings(arch){
+  const base = ARCHETYPES[arch];
+  const jitter = (x) => clamp(Math.round(x + irnd(-6,6)), 40, 95);
+  const r = {
+    shooting: jitter(base.shooting),
+    finishing: jitter(base.finishing),
+    playmaking: jitter(base.playmaking),
+    defense: jitter(base.defense),
+    rebounding: jitter(base.rebounding),
+    stamina: jitter(base.stamina),
+    dunking: jitter(base.dunking),
+    passing: jitter(base.passing),
+    leadership: jitter(base.leadership),
+  };
+  const mainStats = [r.shooting, r.finishing, r.playmaking, r.defense, r.rebounding];
+  r.overall = Math.round(mainStats.reduce((a,b) => a+b, 0) / 5);
+  return r;
+}
+
+function rookieContract(overall){
+  const years = 2 + (overall > 78 ? 2 : overall > 70 ? 1 : 0);
+  const value = Math.round((overall * 80 + irnd(100, 500)) * years); // $k
+  return { team: genTeam(), years, salary: value, clause: chance(0.2) ? "Team Option" : "None" };
+}
+
+// ---------- Core Models ----------
+function newPlayer(custom){
+  const name = custom?.name || genName();
+  const age = custom?.age || startingAge();
+  const arch = custom?.archetype || pickArchetype();
+  const ratings = baseRatings(arch);
+  const rookie = rookieContract(ratings.overall);
+  return {
+    name, age, archetype: arch, ratings, potential: clamp(ratings.overall + irnd(4,15), 70, 99),
+    morale: 70, health: 100, peak: 90, fame: 5, followers: irnd(1000, 5000), cash: 50, 
+    endorsements: [], shoeDeals: [], premiumServices: [],
+    team: rookie.team, arena: genArena(rookie.team), jersey: irnd(0,99),
+    contract: { ...rookie, year: 1 },
+    season: 1, week: 1, phase: "Preseason", // Preseason, Regular, Playoffs, Offseason
+    teamChem: irnd(40,75), teamStrength: irnd(65,85), teamStanding: irnd(8,15),
+    teammates: generateTeammates(),
+    stats: resetSeasonStats(),
+    league: initializeLeague(),
+    career: { seasons: [], awards: [], totals: resetCareerTotals(), timeline: [event("Signed", `Drafted by ${rookie.team}`)] },
+    alive: true, retired: false,
+  };
+}
+
+function initializeLeague() {
+  const standings = {};
+  TEAMS.forEach(teamKey => {
+    const teamInfo = NBA_TEAMS[teamKey];
+    // Initialize with base strength but add some randomness for league parity
+    const strengthVariation = (Math.random() - 0.5) * 20; // ±10 strength variation
+    const adjustedStrength = Math.max(50, Math.min(95, teamInfo.strength + strengthVariation));
+    
+    // Convert strength to approximate wins (more realistic range)
+    const baseWins = Math.round((adjustedStrength - 30) * 0.8); // Converts 50-95 strength to roughly 16-52 wins
+    const randomVariation = Math.round((Math.random() - 0.5) * 20); // ±10 wins variation
+    const currentSeasonWins = Math.max(10, Math.min(72, baseWins + randomVariation));
+    
+    standings[teamKey] = {
+      name: teamInfo.name,
+      wins: currentSeasonWins,
+      losses: 82 - currentSeasonWins,
+      winPct: currentSeasonWins / 82,
+      conference: teamInfo.conference,
+      baseStrength: teamInfo.strength,
+      currentStrength: adjustedStrength,
+      championships: 0,
+      playoffAppearances: 0,
+      lastPlayoff: null,
+      lastChampionship: null,
+      seasonProgress: 0 // Tracks how many games into season
+    };
+  });
+  return { standings, season: 1 };
+}
+
+// Function to update standings consistently across the game
+function updateStandings(game, weeksProgressed = 1) {
+  const standings = { ...game.league.standings };
+  
+  TEAMS.forEach(teamKey => {
+    const team = standings[teamKey];
+    if (!team) return;
+    
+    // Simulate games based on current strength + some randomness for 82-game season
+    const currentForm = team.currentStrength + (Math.random() - 0.5) * 12; // Reduced variance for realism
+    const expectedWinRate = Math.max(0.20, Math.min(0.80, currentForm / 100)); // 20-80% win rate range
+    
+    // Each week represents 10 games now (82 games / ~8.2 weeks)
+    const gamesThisWeek = game.phase === "Regular" ? 10 : 3; // More games during regular season
+    let newWins = 0;
+    
+    for (let i = 0; i < gamesThisWeek; i++) {
+      if (Math.random() < expectedWinRate) {
+        newWins++;
+      }
+    }
+    
+    const newLosses = gamesThisWeek - newWins;
+    const totalGamesAfter = team.wins + team.losses + gamesThisWeek;
+    
+    // Ensure we don't exceed 82 games in regular season
+    if (totalGamesAfter <= 82 || game.phase !== "Regular") {
+      team.wins = team.wins + newWins;
+      team.losses = team.losses + newLosses;
+      team.winPct = team.wins / (team.wins + team.losses);
+      team.seasonProgress += gamesThisWeek;
+    }
+    
+    // More stable team strength - teams don't fluctuate as wildly
+    const strengthChange = (Math.random() - 0.5) * 1.5; // Smaller changes for stability
+    team.currentStrength = Math.max(50, Math.min(90, team.currentStrength + strengthChange));
+  });
+  
+  return standings;
+}
+
+// Get consistent standings sorted by conference
+function getStandings(game) {
+  const standings = game.league.standings;
+  const standingsArray = Object.keys(standings).map(teamKey => ({
+    team: teamKey,
+    ...standings[teamKey],
+    isPlayerTeam: teamKey === game.team
+  }));
+  
+  return standingsArray.sort((a, b) => b.winPct - a.winPct);
+}
+
+// Get conference-specific standings
+function getConferenceStandings(game, conference) {
+  return getStandings(game).filter(team => team.conference === conference);
+}
+
+function generateTeammates(){
+  const count = irnd(4, 7);
+  const teammates = [];
+  for(let i = 0; i < count; i++){
+    teammates.push({
+      name: genName(),
+      overall: irnd(55, 85),
+      ppg: irnd(8, 24),
+      rpg: irnd(3, 12),
+      apg: irnd(2, 9),
+      position: pick(["PG", "SG", "SF", "PF", "C"]),
+    });
+  }
+  return teammates;
+}
+
+function resetSeasonStats(){
+  return {
+    games: 0, minutes: 0, points: 0, rebounds: 0, assists: 0, steals: 0, blocks: 0,
+    fgMade: 0, fgAtt: 0, threesMade: 0, threesAtt: 0, ftMade: 0, ftAtt: 0,
+    wins: 0, losses: 0, playoffs: false, champion: false, finalsMVP: false,
+    gameLogs: [],
+  };
+}
+
+function resetCareerTotals(){
+  return {
+    games: 0, minutes: 0, points: 0, rebounds: 0, assists: 0, steals: 0, blocks: 0,
+    fgMade: 0, fgAtt: 0, threesMade: 0, threesAtt: 0, ftMade: 0, ftAtt: 0,
+    titles: 0, mvps: 0, dpoys: 0, sixmoys: 0, mips: 0, scoring: 0, allstars: 0, roys: 0, finalsMVPs: 0,
+    wins: 0, losses: 0, per: [], ts: [], usage: [],
+  };
+}
+
+function event(type, text){
+  return { id: cryptoRandomId(), weekStamp: Date.now(), type, text };
+}
+
+function cryptoRandomId(){
+  // reasonably unique without external libs
+  return Math.random().toString(36).slice(2) + "-" + Date.now().toString(36).slice(2);
+}
+
+// ---------- Simulation ----------
+function playerGameSim(p){
+  // Base minutes depend on peak/health and team strength
+  const peakFactor = p.peak / 100;
+  const healthFactor = p.health / 100;
+  const ageMultiplier = getAgeMultiplier(p.age);
+  
+  const mins = clamp(24 + irnd(-6, 8) + Math.round((p.ratings.overall-70)/3) + Math.round(peakFactor * 8) - Math.round((100-p.health)/10), 8, 44);
+  
+  // Improved usage calculation - elite players get much higher usage
+  const usageBase = 0.18 + (p.ratings.overall-60)/100 * 0.25; // Elite players get 30%+ usage
+  const usage = clamp(usageBase + (p.ratings.shooting + p.ratings.finishing)/200 * 0.15 + rnd(-0.03, 0.03), 0.15, 0.40);
+  
+  // Shot attempts scale better with high ratings
+  const shotsBase = Math.max(6, Math.round(mins * 1.2 * usage)); // Higher base shots
+  const efficiencyBonus = (p.ratings.overall >= 85) ? 1.2 : (p.ratings.overall >= 80) ? 1.1 : 1.0;
+  const shots = Math.round(shotsBase * efficiencyBonus);
+  
+  // Three-point rate based on shooting rating with better scaling
+  const threeRateBase = 0.15 + Math.max(0, (p.ratings.shooting-65)/80 * 0.35);
+  const threeRate = clamp(threeRateBase + rnd(-0.05, 0.05), 0.10, 0.50);
+  const threes = Math.round(shots * threeRate);
+  const twos = Math.max(0, shots - threes);
+
+  // Improved shooting percentages - elite shooters should be much better
+  const shootingBonus = p.ratings.shooting >= 90 ? 0.08 : p.ratings.shooting >= 85 ? 0.05 : p.ratings.shooting >= 80 ? 0.03 : 0;
+  const finishingBonus = p.ratings.finishing >= 90 ? 0.06 : p.ratings.finishing >= 85 ? 0.04 : p.ratings.finishing >= 80 ? 0.02 : 0;
+  
+  const fg2Pct = clamp(0.42 + (p.ratings.finishing-60)/80 * 0.28 + finishingBonus + (healthFactor-0.5)*0.08 + rnd(-0.06,0.06), 0.35, 0.75);
+  const fg3Pct = clamp(0.32 + (p.ratings.shooting-60)/80 * 0.28 + shootingBonus + (peakFactor-0.5)*0.06 + rnd(-0.07,0.07), 0.25, 0.60);
+  const ftPct  = clamp(0.70 + (p.ratings.shooting-60)/80 * 0.25 + shootingBonus*0.5 + rnd(-0.04,0.04), 0.60, 0.95);
+
+  const made2 = binomial(twos, fg2Pct);
+  const made3 = binomial(threes, fg3Pct);
+  const and1  = binomial(made2 + made3, 0.08);
+  const fts   = and1 * 1 + irnd(0,4);
+  const ftm   = binomial(fts, ftPct);
+
+  // Better scaling for other stats based on ratings
+  const playmakingFactor = 0.25 + (p.ratings.playmaking >= 85 ? 0.15 : p.ratings.playmaking >= 75 ? 0.10 : 0);
+  const reboundingFactor = 0.30 + (p.ratings.rebounding >= 85 ? 0.20 : p.ratings.rebounding >= 75 ? 0.12 : 0);
+  const defenseFactor = 0.06 + (p.ratings.defense >= 85 ? 0.04 : p.ratings.defense >= 75 ? 0.02 : 0);
+
+  // Apply age multiplier to counting stats with better base calculations
+  const baseAst = poisson(mins * (p.ratings.playmaking/100) * playmakingFactor);
+  const baseReb = poisson(mins * (p.ratings.rebounding/100) * reboundingFactor);
+  const baseStl = poisson(mins * (p.ratings.defense/100) * defenseFactor);
+  const baseBlk = poisson(mins * (p.ratings.defense/100) * (defenseFactor * 0.8));
+
+  const ast = Math.round(baseAst * ageMultiplier);
+  const reb = Math.round(baseReb * ageMultiplier);
+  const stl = Math.round(baseStl * ageMultiplier);
+  const blk = Math.round(baseBlk * ageMultiplier);
+  const pts = Math.round((made2*2 + made3*3 + ftm) * ageMultiplier);
+
+  // Calculate advanced stats
+  const per = calculatePER(pts, reb, ast, stl, blk, made2 + made3, twos + threes, ftm, fts, mins);
+  const ts = calculateTS(pts, twos + threes, fts);
+
+  return {
+    minutes: mins,
+    fgMade: made2 + made3,
+    fgAtt: twos + threes,
+    threesMade: made3,
+    threesAtt: threes,
+    ftMade: ftm,
+    ftAtt: fts,
+    points: pts,
+    rebounds: reb,
+    assists: ast,
+    steals: stl,
+    blocks: blk,
+    per: per,
+    ts: ts,
+    usage: usage,
+    ageMultiplier: ageMultiplier, // Include for debugging/display
+  };
+}
+
+function calculatePER(pts, reb, ast, stl, blk, fgm, fga, ftm, fta, mins) {
+  if (mins === 0) return 0;
+  // Simplified PER calculation
+  const uPER = (1/mins) * (fgm * 85.910 + stl * 53.897 + (3 * ast) * 34.677 + ftm * 46.845 + blk * 39.190 + reb * 39.190 - (fga - fgm) * 39.190 - (fta - ftm) * 20.091);
+  return Math.max(0, uPER);
+}
+
+function calculateTS(pts, fga, fta) {
+  if (fga === 0 && fta === 0) return 0;
+  return pts / (2 * (fga + 0.44 * fta));
+}
+
+function binomial(n, p){
+  let k = 0; for(let i=0;i<n;i++){ if(Math.random()<p) k++; } return k;
+}
+function poisson(lambda){
+  // Knuth's algorithm
+  let L=Math.exp(-lambda), k=0, p=1; do{ k++; p*=Math.random(); }while(p>L); return k-1;
+}
+
+function teamWinChance(p, gameState){
+  const starPower = (p.ratings.overall - 70) * 0.006 + p.fame * 0.002;
+  const chem = (p.teamChem-50)/100 * 0.08;
+  
+  // Use actual NBA team strength and standings position for realistic win chances
+  const teamInfo = NBA_TEAMS[p.team];
+  const actualTeamStrength = teamInfo ? teamInfo.strength : p.teamStrength;
+  
+  // Get team's current standing position (1-30) - use gameState parameter
+  const standings = getStandings(gameState);
+  const teamStanding = standings.findIndex(team => team.team === p.team) + 1;
+  
+  // Base win chance heavily on team strength and current standing
+  // Top 8 teams have much better chances, bottom teams struggle
+  let baseChance = 0.15; // Very low base for bad teams
+  if (teamStanding <= 4) baseChance = 0.70; // Elite teams
+  else if (teamStanding <= 8) baseChance = 0.55; // Good playoff teams  
+  else if (teamStanding <= 16) baseChance = 0.35; // Mediocre teams
+  else if (teamStanding <= 24) baseChance = 0.20; // Poor teams
+  
+  // Player impact (reduced from original)
+  const strength = (actualTeamStrength-70)/100 * 0.12; // Reduced team strength impact
+  const peak = (p.peak-50)/100 * 0.04;
+  const health = (p.health-50)/100 * 0.03;
+  const morale = (p.morale-70)/100 * 0.02;
+  
+  return clamp(baseChance + starPower + chem + strength + peak + health + morale, 0.05, 0.80);
+}
+
+function progressAging(p){
+  // development curve: improve early, plateau, decline later
+  const dev = p.potential - p.ratings.overall;
+  let delta = 0;
+  if(p.age <= 24) delta = clamp( (dev>0? rnd(0.2,1.5): rnd(-0.5,0.5)) + rnd(-0.4,0.4), -1.0, 2.0);
+  else if(p.age <= 28) delta = clamp( rnd(-0.3, 1.2), -0.8, 1.5);
+  else if(p.age <= 32) delta = clamp( rnd(-1.0, 0.6), -1.6, 1.0);
+  else delta = clamp( rnd(-2.2, -0.2), -3.0, 0.2);
+  const keys = ["shooting","finishing","playmaking","defense","rebounding","stamina","dunking","passing","leadership"];
+  keys.forEach(k=>{ 
+    if(["shooting","finishing","playmaking","defense","rebounding"].includes(k)) {
+      p.ratings[k] = clamp(Math.round(p.ratings[k] + delta + rnd(-0.4,0.4)), 40, 99);
+    } else {
+      p.ratings[k] = clamp(Math.round(p.ratings[k] + delta*0.7 + rnd(-0.3,0.3)), 40, 99);
+    }
+  });
+  const mainStats = [p.ratings.shooting, p.ratings.finishing, p.ratings.playmaking, p.ratings.defense, p.ratings.rebounding];
+  p.ratings.overall = Math.round(mainStats.reduce((a,b)=>a+b,0)/5);
+}
+
+function endSeasonAwards(player, league){
+  const avg = seasonAverages(player.stats);
+  const awards = [];
+  
+  // MVP - More achievable but still elite
+  const mvpThreshold = 24 + rnd(-2, 2); // Reduced threshold
+  const mvpWinPct = 0.55; // Reduced win requirement
+  if(avg.pts >= mvpThreshold && avg.winsPct >= mvpWinPct && player.ratings.overall >= 83) {
+    // Additional criteria for MVP
+    const efficiency = avg.per >= 23; // Lowered PER requirement
+    const wellRounded = (avg.reb >= 5 && avg.ast >= 4) || (avg.reb >= 7) || (avg.ast >= 7);
+    const teamSuccess = avg.winsPct >= 0.60;
+    const statLeader = avg.pts >= league.scoringLeader - 2; // Near scoring leader
+    
+    if((efficiency || wellRounded || teamSuccess || statLeader) && chance(0.55)) { // Increased to 55% chance
+      awards.push("MVP");
+    }
+  }
+  
+  // DPOY - More achievable for defensive players
+  const dpoyThreshold = 3.0 + rnd(-0.3, 0.3); // Lowered threshold
+  if(avg.stl + avg.blk >= dpoyThreshold && avg.winsPct >= 0.40 && player.ratings.defense >= 78) {
+    if(chance(0.40)) awards.push("DPOY"); // Increased to 40% chance
+  }
+  
+  // Finals MVP - More realistic distribution
+  if(player.stats.finals && avg.winsPct >= 0.70) {
+    const fmvpChance = Math.min(0.75, 0.35 + (avg.pts - 20) * 0.03 + (avg.winsPct - 0.70) * 1.0);
+    if(chance(fmvpChance)) awards.push("Finals MVP");
+  }
+  
+  // Rookie of the Year - First year players only
+  if(player.season === 1 && avg.pts >= 14 && avg.mins >= 22) { // Lowered requirements
+    awards.push("ROY");
+  }
+  
+  // Scoring Title - Must lead league in scoring
+  if(avg.pts >= league.scoringLeader - 0.5) { // Slightly more lenient
+    awards.push("Scoring Title");
+  }
+  
+  // All-Star - More achievable
+  const allStarPPG = 16 + rnd(-2, 2); // Lowered threshold
+  if(avg.pts >= allStarPPG && avg.winsPct >= 0.30 && player.ratings.overall >= 72) {
+    const allStarChance = Math.min(0.8, 0.3 + (avg.pts - 16) * 0.025 + (avg.winsPct - 0.30) * 0.7);
+    if(chance(allStarChance)) awards.push("All-Star");
+  }
+  
+  // Most Improved Player - More frequent for growth
+  if(avg.improved && player.season > 1 && chance(0.25)) { // Increased chance
+    awards.push("MIP");
+  }
+  
+  // Sixth Man of the Year - Bench players only  
+  if(avg.benchBeast && chance(0.3)) { // Increased chance
+    awards.push("6MOY");
+  }
+  
+  return awards;
+}
+
+function seasonAverages(s){
+  const gp = Math.max(1, s.games);
+  const mins = s.minutes/gp, pts=s.points/gp, reb=s.rebounds/gp, ast=s.assists/gp, stl=s.steals/gp, blk=s.blocks/gp;
+  const fgPct = s.fgAtt? s.fgMade/s.fgAtt : 0; 
+  const tpPct = s.threesAtt? s.threesMade/s.threesAtt:0; 
+  const ftPct = s.ftAtt? s.ftMade/s.ftAtt:0;
+  const winsPct = gp? s.wins/gp:0;
+  const improved = gp>10 && (pts>18 || ast>7 || reb>10) && chance(0.3);
+  const benchBeast = mins<24 && pts>14 && chance(0.4);
+  
+  // Calculate advanced stats averages
+  const per = s.gameLogs.length ? s.gameLogs.reduce((sum, log) => sum + (log.per || 0), 0) / s.gameLogs.length : 0;
+  const ts = s.gameLogs.length ? s.gameLogs.reduce((sum, log) => sum + (log.ts || 0), 0) / s.gameLogs.length : 0;
+  const usage = s.gameLogs.length ? s.gameLogs.reduce((sum, log) => sum + (log.usage || 0), 0) / s.gameLogs.length : 0;
+  
+  return { gp, mins, pts, reb, ast, stl, blk, fgPct, tpPct, ftPct, winsPct, improved, benchBeast, per, ts, usage };
+}
+
+function playoffsSim(player, gameState){
+  // Only top 16 teams make playoffs - check if team qualifies
+  const standings = getStandings(gameState);
+  const teamStanding = standings.findIndex(team => team.team === player.team) + 1;
+  
+  // If team is not in playoff position (top 16), no championship possible
+  if(teamStanding > 16) {
+    return { champion: false, finalsMVP: false, wins: 0 };
+  }
+  
+  // 4 rounds for realistic playoffs: First Round, Conference Semis, Conference Finals, NBA Finals
+  let rounds = ["First Round", "Conference Semifinals", "Conference Finals", "NBA Finals"]; 
+  let champion = false; 
+  let finalsMVP = false; 
+  let wins = 0;
+  
+  rounds.forEach((r, idx) => {
+    const wc = teamWinChance(player, gameState);
+    
+    // Each round gets progressively harder - reduce win chance
+    let adjustedWinChance = wc;
+    if(idx === 1) adjustedWinChance *= 0.9; // Conference Semis slightly harder
+    if(idx === 2) adjustedWinChance *= 0.8; // Conference Finals harder
+    if(idx === 3) adjustedWinChance *= 0.7; // NBA Finals much harder
+    
+    const won = chance(adjustedWinChance);
+    if(won) {
+      wins++;
+      
+      // Only if you win the Finals do you become champion
+      if(idx === 3) { 
+        champion = true;
+        
+        // Finals MVP is very rare and requires exceptional performance
+        const playerAvg = seasonAverages(player.stats);
+        const isEliteScorer = playerAvg.pts >= 25;
+        const isAllAround = playerAvg.pts >= 20 && playerAvg.reb >= 8 && playerAvg.ast >= 6;
+        const isTeamLeader = player.ratings.overall >= 85;
+        const teamStandingBonus = teamStanding <= 4 ? 0.3 : teamStanding <= 8 ? 0.2 : 0.1;
+        
+        // Much more strict Finals MVP criteria
+        let fmvpChance = 0.15; // Base 15% chance
+        if(isEliteScorer) fmvpChance += 0.25;
+        if(isAllAround) fmvpChance += 0.20;
+        if(isTeamLeader) fmvpChance += 0.15;
+        fmvpChance += teamStandingBonus;
+        
+        // Cap at 75% max chance
+        finalsMVP = chance(Math.min(0.75, fmvpChance));
+      }
+    } else {
+      // Lost this round, season over
+      return;
+    }
+  });
+  
+  return { champion, finalsMVP, wins };
+}
+
+// ---------- Endorsements & Events ----------
+const ENDORSEMENTS = [
+  { name: "HyperBounce Shoes", minOverall: 70, base: 200, risk: 0.05 },
+  { name: "Swish Soda", minOverall: 65, base: 120, risk: 0.08 },
+  { name: "DefendPro Gear", minOverall: 68, base: 150, risk: 0.06 },
+  { name: "StreamHoops", minOverall: 75, base: 260, risk: 0.04 },
+  { name: "RimRock Energy", minOverall: 72, base: 180, risk: 0.07 },
+];
+
+const LIFE_EVENTS = [
+  (p)=>({ text: "Local fans start a chant with your name.", morale:+5, fame:+3, followers: +2000 }),
+  (p)=>({ text: "You volunteer at a youth clinic.", morale:+6, fame:+2, followers: +1500 }),
+  (p)=>({ text: "Minor ankle sprain in practice.", health:-6, peak:-8 }),
+  (p)=>({ text: "Viral trickshot video boosts your profile.", fame:+5, followers: +8000 }),
+  (p)=>({ text: "Locker room disagreement.", morale:-5, teamChem:-4 }),
+  (p)=>({ text: "Meditation retreat weekend.", peak:+10, morale:+4 }),
+  (p)=>({ text: "Random drug test (you pass).", morale:-1 }),
+  (p)=>({ text: "You adopt a rescue dog named Bouncy.", morale:+7, followers: +3000 }),
+  (p)=>({ text: "Featured on magazine cover.", fame:+8, followers: +12000, cash: +25 }),
+  (p)=>({ text: "Charity event raises $50k for local schools.", morale:+8, fame:+6, followers: +5000 }),
+  (p)=>({ text: "Controversial social media post backfires.", fame:-3, followers: -8000, morale:-3 }),
+  (p)=>({ text: "You discover a new pregame ritual.", peak:+5, morale:+3 }),
+  (p)=>({ text: "Invited to exclusive basketball camp.", dunking: +1, leadership: +1 }),
+  (p)=>({ text: "Food poisoning from team dinner.", health:-10, peak:-15 }),
+  (p)=>({ text: "Win slam dunk contest at local event.", fame:+4, followers: +6000, dunking: +2 }),
+];
+
+function applyDelta(p, delta){
+  const keys = Object.keys(delta);
+  keys.forEach(k=>{
+    if(k==="text") return;
+    if(k==="teamChem"||k==="fame"||k==="cash"||k==="morale"||k==="health"||k==="peak"||k==="followers"){
+      if(k==="followers") {
+        p[k] = Math.max(0, (p[k]||0) + delta[k]);
+      } else {
+        p[k] = clamp((p[k]||0) + delta[k], 0, 100);
+      }
+    } else if(p.ratings && p.ratings[k] !== undefined) {
+      p.ratings[k] = clamp(Math.round((p.ratings[k]||0) + delta[k]), 40, 99);
+      // Recalculate overall if main stat changed
+      const mainStats = [p.ratings.shooting, p.ratings.finishing, p.ratings.playmaking, p.ratings.defense, p.ratings.rebounding];
+      p.ratings.overall = Math.round(mainStats.reduce((a,b)=>a+b,0)/5);
+    }
+  });
+}
+
+// ---------- Main Component ----------
+export default function BasketballLife(){
+  const [game, setGame] = useState(()=> loadGame() || newPlayer());
+  const [tab, setTab] = useState("Home");
+  const [toast, setToast] = useState(null);
+  const [championshipToast, setChampionshipToast] = useState(null);
+  const [awardsPopup, setAwardsPopup] = useState(null);
+  const [showImport, setShowImport] = useState(false);
+  const importRef = useRef();
+
+  useEffect(()=>{ saveGame(game); }, [game]);
+  
+  // Update team colors dynamically
+  useEffect(() => {
+    if (game?.team && NBA_TEAMS[game.team]) {
+      const teamColors = NBA_TEAMS[game.team].colors;
+      document.documentElement.style.setProperty('--team-primary', teamColors.primary);
+      document.documentElement.style.setProperty('--team-secondary', teamColors.secondary);
+      document.documentElement.style.setProperty('--team-text', teamColors.text);
+      
+      // Add glassmorphism team colors
+      const primaryRgb = hexToRgb(teamColors.primary);
+      const secondaryRgb = hexToRgb(teamColors.secondary);
+      document.documentElement.style.setProperty('--team-glass', `rgba(${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}, 0.1)`);
+      document.documentElement.style.setProperty('--team-border', `rgba(${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}, 0.2)`);
+    } else {
+      // Default colors if no team
+      document.documentElement.style.setProperty('--team-primary', '#3b82f6');
+      document.documentElement.style.setProperty('--team-secondary', '#1e40af');
+      document.documentElement.style.setProperty('--team-text', '#ffffff');
+      document.documentElement.style.setProperty('--team-glass', 'rgba(59, 130, 246, 0.1)');
+      document.documentElement.style.setProperty('--team-border', 'rgba(59, 130, 246, 0.2)');
+    }
+  }, [game?.team]);
+
+  function resetAll(){ setGame(newPlayer()); setTab("Home"); pushToast("New career started!"); }
+
+  function pushToast(t){ setToast({ id: cryptoRandomId(), text: t}); setTimeout(()=>setToast(null), 2200); }
+  
+  function pushChampionshipToast(title, count, finalsMVP = false) {
+    setChampionshipToast({ title, count, finalsMVP });
+    setTimeout(() => setChampionshipToast(null), 5000);
+  }
+
+  function showAwardsPopup(awards, seasonNumber, isChampion, isFinalsMVP) {
+    setAwardsPopup({ 
+      awards, 
+      season: seasonNumber, 
+      champion: isChampion, 
+      finalsMVP: isFinalsMVP 
+    });
+  }
+
+  function actTrain(type, intensity = 1){
+    setGame(prev=>{
+      const p = deepClone(prev);
+      if(p.phase==="Offseason" || p.phase==="Preseason" || p.phase==="Regular"){
+        // Auto-rest if peak is too low
+        if(p.peak < 30 && type !== "Recovery") {
+          p.peak = clamp(p.peak + 20, 0, 100);
+          p.morale = clamp(p.morale + 3, 0, 100);
+          p.career.timeline.push(event("Training", "Auto-rest applied before training."));
+        }
+        
+        const costPeak = type==="Recovery"? (15 * intensity) : -(8 * intensity);
+        const moraleBase = type==="Recovery"? 2 : 1;
+        const moraleDelta = moraleBase * intensity;
+        p.peak = clamp(p.peak + costPeak, 0, 100);
+        p.morale = clamp(p.morale + moraleDelta, 0, 100);
+        
+        const trainMap = {
+          Shooting: ["shooting"],
+          Finishing: ["finishing"], 
+          Playmaking: ["playmaking"],
+          Defense: ["defense"],
+          Rebounding: ["rebounding"],
+          Stamina: ["stamina"],
+          Dunking: ["dunking"],
+          Passing: ["passing"],
+          Leadership: ["leadership"],
+          Balanced: ["shooting","finishing","playmaking","defense","rebounding"],
+          Recovery: [],
+        };
+        
+        const boost = Math.round((0.3 + rnd(0, 0.4)) * intensity);
+        trainMap[type].forEach(k=>{ 
+          p.ratings[k] = clamp(Math.round(p.ratings[k] + boost), 40, 99);
+        });
+        
+        // Recalculate overall
+        const mainStats = [p.ratings.shooting, p.ratings.finishing, p.ratings.playmaking, p.ratings.defense, p.ratings.rebounding];
+        p.ratings.overall = Math.round(mainStats.reduce((a,b)=>a+b,0)/5);
+        
+        p.career.timeline.push(event("Training", `${type} session (${intensity}x) completed.`));
+      }
+      return p;
+    });
+    pushToast(`${type} training (${intensity}x) applied`);
+  }
+
+  function actHealth(type){
+    setGame(prev=>{
+      const p = deepClone(prev);
+      let cost = 0, healthGain = 0, peakGain = 0, moraleGain = 0;
+      
+      switch(type){
+        case "Diet":
+          cost = 15; healthGain = 8; peakGain = 3; break;
+        case "Gym":
+          cost = 25; healthGain = 12; peakGain = 5; moraleGain = 2; break;
+        case "Cryotherapy":
+          cost = 80; healthGain = 20; peakGain = 15; moraleGain = 3; break;
+      }
+      
+      if(p.cash >= cost){
+        p.cash -= cost;
+        p.health = clamp(p.health + healthGain, 0, 100);
+        p.peak = clamp(p.peak + peakGain, 0, 100);
+        p.morale = clamp(p.morale + moraleGain, 0, 100);
+        p.career.timeline.push(event("Health", `${type} session completed (-$${cost}k).`));
+        pushToast(`${type} completed!`);
+      } else {
+        pushToast(`Not enough cash for ${type} ($${cost}k needed)`);
+      }
+      return p;
+    });
+  }
+
+  function takeEndorsement(){
+    setGame(prev=>{
+      const p = deepClone(prev);
+      const offers = ENDORSEMENTS.filter(e=>p.ratings.overall>=e.minOverall && !p.endorsements.find(x=>x.name===e.name));
+      if(!offers.length){ pushToast("No new offers right now"); return p; }
+      const offer = pick(offers);
+      const value = Math.round(offer.base * (1 + p.fame/100 + p.followers/100000 + rnd(-0.1, 0.25)));
+      p.cash += value;
+      p.endorsements.push({ name: offer.name, value });
+      p.career.timeline.push(event("Endorsement", `Signed with ${offer.name} for $${value}k`));
+      return p;
+    });
+  }
+
+  function takeShoeEndorsement(){
+    setGame(prev=>{
+      const p = deepClone(prev);
+      const offers = SHOE_BRANDS.filter(b=>p.ratings.overall>=b.minOverall && p.followers>=b.minFollowers && !p.shoeDeals.find(x=>x.name===b.name));
+      if(!offers.length){ pushToast("No shoe deals available"); return p; }
+      const offer = pick(offers);
+      const value = Math.round(offer.base * (1 + p.fame/100 + p.followers/200000 + rnd(-0.1, 0.3)));
+      p.cash += value;
+      p.shoeDeals.push({ name: offer.name, value, years: irnd(2,5) });
+      p.career.timeline.push(event("Shoe Deal", `Signed with ${offer.name} for $${value}k`));
+      return p;
+    });
+  }
+
+  function buyPremiumService(service){
+    setGame(prev=>{
+      const p = deepClone(prev);
+      if(p.cash >= service.cost && !p.premiumServices.find(s => s.name === service.name)){
+        p.cash -= service.cost;
+        p.premiumServices.push({ ...service, weeksLeft: service.duration });
+        if(service.healthBoost) p.health = clamp(p.health + service.healthBoost, 0, 100);
+        if(service.peakBoost) p.peak = clamp(p.peak + service.peakBoost, 0, 100);
+        if(service.moraleBoost) p.morale = clamp(p.morale + service.moraleBoost, 0, 100);
+        if(service.leadershipBoost) p.ratings.leadership = clamp(p.ratings.leadership + service.leadershipBoost, 40, 99);
+        if(service.followersBoost) p.followers += service.followersBoost;
+        if(service.ratingBoost) {
+          ["shooting","finishing","playmaking","defense","rebounding"].forEach(k => {
+            p.ratings[k] = clamp(Math.round(p.ratings[k] + service.ratingBoost), 40, 99);
+          });
+          const mainStats = [p.ratings.shooting, p.ratings.finishing, p.ratings.playmaking, p.ratings.defense, p.ratings.rebounding];
+          p.ratings.overall = Math.round(mainStats.reduce((a,b)=>a+b,0)/5);
+        }
+        p.career.timeline.push(event("Premium", `Hired ${service.name} for ${service.duration} weeks (-$${service.cost}k).`));
+        pushToast(`${service.name} hired!`);
+      } else {
+        pushToast(p.cash < service.cost ? `Need $${service.cost}k` : "Already active");
+      }
+      return p;
+    });
+  }
+
+  function requestTrade(){
+    setGame(prev=>{
+      const p = deepClone(prev);
+      if(chance(0.6)){ // 60% success rate
+        const oldTeam = p.team;
+        p.team = pick(TEAMS.filter(t=>t!==p.team));
+        p.arena = genArena(p.team);
+        p.teammates = generateTeammates();
+        p.teamChem = irnd(30, 70); // fresh start uncertainty
+        p.teamStrength = irnd(60, 90);
+        p.teamStanding = irnd(5, 20);
+        p.career.timeline.push(event("Trade", `Successfully traded from ${oldTeam} to ${p.team}.`));
+        pushToast("Trade request approved!");
+      } else {
+        p.morale = clamp(p.morale - 5, 0, 100);
+        p.career.timeline.push(event("Trade", "Trade request denied by management."));
+        pushToast("Trade request denied");
+      }
+      return p;
+    });
+  }
+
+  function requestContract(){
+    setGame(prev=>{
+      const p = deepClone(prev);
+      const currentValue = p.contract.salary / p.contract.years;
+      const avg = seasonAverages(p.stats);
+      
+      // Performance-based value increase
+      const performanceMultiplier = 1 + (p.ratings.overall - 75) / 100 + avg.pts / 50;
+      const marketMultiplier = 1 + (p.fame / 100) * 0.3;
+      const newValue = Math.round(currentValue * performanceMultiplier * marketMultiplier * (1.1 + rnd(-0.05, 0.15)));
+      
+      // Success rate based on performance and team situation
+      const teamInfo = NBA_TEAMS[p.team];
+      const teamNeedsPlayer = teamInfo && teamInfo.strength < 80;
+      const successRate = 0.3 + (avg.pts > 20 ? 0.2 : 0) + (avg.per > 18 ? 0.15 : 0) + (teamNeedsPlayer ? 0.15 : 0);
+      
+      if(chance(successRate)){ 
+        const increase = newValue - currentValue;
+        p.contract.salary = Math.round(newValue * (p.contract.years - p.contract.year + 1));
+        p.cash += Math.round(increase * 0.25); // signing bonus based on increase
+        p.career.timeline.push(event("Contract", `Renegotiated contract: +$${increase}k/year (${newValue}k total).`));
+        pushToast(`Contract increased to $${newValue}k/year!`);
+      } else {
+        p.morale = clamp(p.morale - 5, 0, 100);
+        p.career.timeline.push(event("Contract", "Contract renegotiation rejected by management."));
+        pushToast("Contract request denied - improve performance");
+      }
+      return p;
+    });
+  }
+
+  function simMonth(){
+    setGame(prev => {
+      let p = deepClone(prev);
+      for(let i = 0; i < 4; i++) {
+        // Simulate one week
+        p = simulateOneWeek(p);
+      }
+      return p;
+    });
+    pushToast("Simmed 1 month!");
+  }
+
+  function simSeason(){
+    setGame(prev => {
+      let p = deepClone(prev);
+      let weekCount = 0;
+      const maxWeeks = 100; // Safety limit to prevent infinite loops
+      
+      while(p.phase !== "Offseason" && !p.retired && weekCount < maxWeeks) {
+        p = simulateOneWeek(p);
+        weekCount++;
+      }
+      return p;
+    });
+    pushToast("Season simulated!");
+  }
+
+  // Helper function to simulate one week without state updates
+  function simulateOneWeek(p) {
+    // Update premium services
+    p.premiumServices = p.premiumServices.filter(service => {
+      service.weeksLeft--;
+      if(service.weeksLeft <= 0) {
+        p.career.timeline.push(event("Premium", `${service.name} contract expired.`));
+        return false;
+      }
+      return true;
+    });
+
+    // Weekly tick: chance of minor injury if peak is low
+    if(p.peak < 25 && chance(0.15)){ 
+      p.health = clamp(p.health - irnd(5,12), 0, 100); 
+      p.career.timeline.push(event("Injury","Minor injury from low peak condition.")); 
+    }
+
+    // Phase behavior
+    if(p.phase==="Preseason"){
+      // 2 weeks preseason
+      if(p.week>=2){ 
+        p.phase = "Regular"; 
+        p.week = 1; 
+        p.career.timeline.push(event("Season",`Season ${p.season} tip-off!`)); 
+      } else { 
+        p.week++; 
+      }
+    } else if(p.phase==="Regular"){
+      // 12-week regular season, 2 games/week
+      simulateGames(p, 2);
+      if(p.week>=12){
+        // Decide playoffs eligibility
+        const avg = seasonAverages(p.stats);
+        p.stats.playoffs = avg.winsPct>=0.50 || chance(0.25 + avg.winsPct*0.5);
+        p.phase = p.stats.playoffs? "Playoffs" : "Offseason";
+        p.week = 1;
+        if(p.stats.playoffs) p.career.timeline.push(event("Playoffs","Your team clinched a playoff berth!"));
+      } else { 
+        p.week++; 
+      }
+    } else if(p.phase==="Playoffs"){
+      // 3 weeks of playoffs
+      const res = playoffsSim(p, game);
+      if(res.champion){ 
+        p.stats.champion = true; 
+        if(res.finalsMVP) p.stats.finalsMVP = true; 
+        p.career.timeline.push(event("Championship", res.finalsMVP? "You win the title and Finals MVP!":"You are an NBA champion!")); 
+        
+        // Trigger championship notification after state update
+        setTimeout(() => {
+          const titleCount = (game.career?.totals?.titles || 0) + 1;
+          pushChampionshipToast("NBA CHAMPION!", titleCount, res.finalsMVP);
+        }, 100);
+      }
+      p.phase = "Offseason"; 
+      p.week = 1;
+    } else if(p.phase==="Offseason"){
+      // End season bookkeeping
+      finalizeSeason(p);
+      // New season start
+      offSeasonMoves(p);
+      p.season++; 
+      p.phase = "Preseason"; 
+      p.week = 1; 
+      p.age += 1; 
+      progressAging(p);
+      p.career.timeline.push(event("Season",`Entering Season ${p.season}`));
+    }
+
+    // Passive peak decay & social media growth - gradual peak decay
+    p.peak = clamp(p.peak - 1, 0, 100); // Only 1 point per week instead of 4
+    if(chance(0.3)) p.followers += irnd(100, 1000);
+    if(chance(0.25)) randomLifeEventSilent(p);
+    
+    return p;
+  }
+
+  function randomLifeEvent(){
+    setGame(prev=>{
+      const p = deepClone(prev);
+      const ev = pick(LIFE_EVENTS)(p);
+      applyDelta(p, ev);
+      p.career.timeline.push(event("Event", ev.text));
+      return p;
+    });
+    pushToast("Life event!");
+  }
+
+  function playNextWeek(){
+    setGame(prev=>{
+      const p = deepClone(prev);
+
+      // Update league standings consistently
+      p.league.standings = updateStandings(p, 1);
+
+      // Update premium services
+      p.premiumServices = p.premiumServices.filter(service => {
+        service.weeksLeft--;
+        if(service.weeksLeft <= 0) {
+          p.career.timeline.push(event("Premium", `${service.name} contract expired.`));
+          return false;
+        }
+        return true;
+      });
+
+      // Weekly tick: chance of minor injury if peak is low
+      if(p.peak < 25 && chance(0.15)){ 
+        p.health = clamp(p.health - irnd(5,12), 0, 100); 
+        p.career.timeline.push(event("Injury","Minor injury from low peak condition.")); 
+      }
+
+      // Phase behavior
+      if(p.phase==="Preseason"){
+        // 2 weeks preseason
+        if(p.week>=2){ 
+          p.phase = "Regular"; 
+          p.week = 1; 
+          p.career.timeline.push(event("Season",`Season ${p.season} tip-off!`)); 
+        } else { 
+          p.week++; 
+        }
+      } else if(p.phase==="Regular"){
+        // 82-game season, 10 games per week (8.2 weeks)
+        simulateGames(p, 10);
+        if(p.week>=9){ // Changed from 12 to 9 weeks for 82-game season
+          // Decide playoffs eligibility - top 16 teams make playoffs
+          const standings = getStandings(p);
+          const teamStanding = standings.findIndex(team => team.team === p.team) + 1;
+          p.stats.playoffs = teamStanding <= 16;
+          
+          p.phase = p.stats.playoffs? "Playoffs" : "Offseason";
+          p.week = 1;
+          if(p.stats.playoffs) {
+            p.career.timeline.push(event("Playoffs", `Your team (#${teamStanding} seed) clinched a playoff berth!`));
+          } else {
+            p.career.timeline.push(event("Season End", `Season ended. Team finished #${teamStanding} in standings.`));
+          }
+        } else { 
+          p.week++; 
+        }
+      } else if(p.phase==="Playoffs"){
+        // 3 weeks of playoffs
+        const res = playoffsSim(p, p);
+        if(res.champion){ 
+          p.stats.champion = true; 
+          if(res.finalsMVP) p.stats.finalsMVP = true; 
+          p.career.timeline.push(event("Championship", res.finalsMVP? "You win the title and Finals MVP!":"You are an NBA champion!")); 
+          
+          // Trigger championship notification after state update
+          setTimeout(() => {
+            const titleCount = (p.career?.totals?.titles || 0) + 1;
+            pushChampionshipToast("NBA CHAMPION!", titleCount, res.finalsMVP);
+          }, 100);
+        }
+        p.phase = "Offseason"; 
+        p.week = 1;
+      } else if(p.phase==="Offseason"){
+        // End season bookkeeping
+        finalizeSeason(p);
+        // New season start
+        offSeasonMoves(p);
+        p.season++; 
+        p.phase = "Preseason"; 
+        p.week = 1; 
+        p.age += 1; 
+        progressAging(p);
+        p.career.timeline.push(event("Season",`Entering Season ${p.season}`));
+      }
+
+      // Passive peak decay & social media growth - gradual peak decay
+      p.peak = clamp(p.peak - 1, 0, 100); // Only 1 point per week instead of 4
+      if(chance(0.3)) p.followers += irnd(100, 1000);
+      if(chance(0.25)) randomLifeEventSilent(p);
+      return p;
+    });
+  }
+
+  function randomLifeEventSilent(p){
+    const ev = pick(LIFE_EVENTS)(p); applyDelta(p, ev); p.career.timeline.push(event("Event", ev.text));
+  }
+
+  function simulateGames(p, count){
+    for(let g=0; g<count; g++){
+      const perf = playerGameSim(p);
+      const win = chance(teamWinChance(p, p));
+      // update season stats
+      Object.keys(perf).forEach(k=> {
+        if(typeof perf[k] === 'number' && k !== 'ageMultiplier') {
+          p.stats[k] = (p.stats[k] || 0) + perf[k];
+        }
+      });
+      p.stats.games += 1; 
+      if(win) p.stats.wins++; else p.stats.losses++;
+      
+      // Update followers based on performance
+      const followerGain = Math.round(perf.points * 100 + perf.assists * 80 + perf.rebounds * 60 + (win ? 500 : -200));
+      p.followers = Math.max(0, p.followers + followerGain);
+      
+      // peak & morale - minimal peak loss during games unless injured
+      p.peak = clamp(p.peak - (perf.injured ? 3 : 0), 0, 100); // Only lose peak if injured
+      p.morale = clamp(p.morale + (win? +2 : -2) + (perf.points>=25? +1:0) + (perf.points<8? -1:0), 0, 100);
+      
+      // record log
+      p.stats.gameLogs.unshift({
+        id: cryptoRandomId(),
+        gameNo: p.stats.games,
+        win, ...perf
+      });
+      
+      // injuries chance
+      if(chance(0.05 + (100-p.health)/500 + (100-p.peak)/600)){
+        const dmg = irnd(2, 10); 
+        p.health = clamp(p.health - dmg, 0, 100);
+        p.career.timeline.push(event("Injury",`You got banged up (-${dmg} health).`));
+      }
+    }
+  }
+
+  function finalizeSeason(p){
+    const avg = seasonAverages(p.stats);
+    const league = { mvpPts: 22 + rnd(-2,2), dpoyDef: 2.4 + rnd(-0.4,0.4), scoringLeader: 26 + rnd(-2,2) };
+    const awards = endSeasonAwards(p, league);
+    awards.forEach(a=>{
+      p.career.awards.push({ season: p.season, award: a });
+      if(a==="MVP") p.career.totals.mvps++;
+      if(a==="DPOY") p.career.totals.dpoys++;
+      if(a==="6MOY") p.career.totals.sixmoys++;
+      if(a==="MIP") p.career.totals.mips++;
+      if(a==="Scoring Title") p.career.totals.scoring++;
+      if(a==="All-Star") p.career.totals.allstars++;
+      if(a==="ROY") p.career.totals.roys++;
+    });
+    
+    // Handle championship and Finals MVP awards
+    let allAwards = [...awards];
+    if(p.stats.finalsMVP){ 
+      p.career.totals.finalsMVPs++; 
+      p.career.awards.push({ season: p.season, award: "Finals MVP"}); 
+      allAwards.push("Finals MVP");
+    }
+    if(p.stats.champion){ 
+      p.career.totals.titles++; 
+      p.career.awards.push({ season: p.season, award: "NBA Champion"}); 
+      allAwards.push("NBA Champion");
+    }
+
+    // Show awards popup if there are any awards
+    if(allAwards.length > 0) {
+      setTimeout(() => {
+        showAwardsPopup(allAwards, p.season, p.stats.champion, p.stats.finalsMVP);
+      }, 500);
+    }
+
+    // Pay contract salary for the season
+    const seasonSalary = Math.round(p.contract.salary / p.contract.years);
+    p.cash += seasonSalary;
+    p.career.timeline.push(event("Contract", `Received $${seasonSalary}k salary payment.`));
+
+    // Pay endorsement money
+    p.endorsements.forEach(e => {
+      p.cash += e.value;
+      p.career.timeline.push(event("Endorsement", `Received $${e.value}k from ${e.name}.`));
+    });
+
+    // Pay shoe deal money
+    p.shoeDeals.forEach(e => {
+      p.cash += e.value;
+      p.career.timeline.push(event("Shoe Deal", `Received $${e.value}k from ${e.name}.`));
+    });
+
+    // add season to career
+    p.career.seasons.push({ season: p.season, team: p.team, stats: deepClone(p.stats), averages: avg, overall: p.ratings.overall });
+
+    // update career totals including advanced stats
+    const t = p.career.totals;
+    const s = p.stats;
+    ["games","minutes","points","rebounds","assists","steals","blocks","fgMade","fgAtt","threesMade","threesAtt","ftMade","ftAtt","wins","losses"].forEach(k=>{ t[k] = (t[k]||0) + (s[k]||0); });
+    
+    // Store advanced stats for graphs
+    t.per.push(avg.per || 0);
+    t.ts.push(avg.ts || 0);
+    t.usage.push(avg.usage || 0);
+
+    // accolades story
+    if(awards.length){ p.career.timeline.push(event("Awards", `Season ${p.season} awards: ${awards.join(", ")}`)); }
+    if(p.stats.champion){ p.career.timeline.push(event("Banner", `You captured the championship!`)); }
+
+    // Check for forced retirement based on age and performance
+    if(shouldForceRetirement(p, avg)) {
+      p.retired = true;
+      p.career.timeline.push(event("Retirement", `Forced retirement due to declining performance at age ${p.age}.`));
+      setTimeout(() => {
+        pushToast(`Career ended - Retired at age ${p.age} after ${p.season} seasons`);
+      }, 1000);
+    }
+
+    // reset season stats for next year
+    p.stats = resetSeasonStats();
+  }
+
+  function offSeasonMoves(p){
+    // More stable team movement - teams don't move as drastically in standings
+    const currentStanding = p.teamStanding;
+    const maxMovement = currentStanding <= 8 ? 2 : 3; // Top teams stay more stable
+    p.teamStanding = clamp(currentStanding + irnd(-maxMovement, maxMovement), 1, 30);
+    
+    // More realistic contract/trade logic - favor extensions heavily
+    let moved = false;
+    if(p.contract.year >= p.contract.years){
+      // Check for extension offers first (80% chance if playing well)
+      const avg = seasonAverages(p.stats);
+      const extensionLikely = avg.pts >= 15 && avg.winsPct >= 0.4 && p.teamChem >= 60;
+      
+      if(extensionLikely && chance(0.80)) {
+        // Extension with current team
+        const years = irnd(2, 4);
+        const salary = Math.round((p.ratings.overall*120 + p.fame*25 + p.followers/800 + irnd(200,800)) * years);
+        p.contract = { team: p.team, years, salary, clause: chance(0.30)?"Player Option":"None", year: 1 };
+        p.career.timeline.push(event("Extension", `You signed an extension with the ${p.team} (${years}y, $${salary}k).`));
+      } else {
+        // Free agency - but fewer offers, more selective
+        const offers = irnd(1, 3); // Reduced from 2-4
+        const bestTeam = pick(TEAMS.filter(t=>t!==p.team));
+        let bestValue = 0; let chosen = null;
+        for(let i=0;i<offers;i++){
+          const team = pick(TEAMS);
+          const years = irnd(2,4);
+          const salary = Math.round((p.ratings.overall*100 + p.fame*20 + p.followers/1000 + irnd(100,600)) * years);
+          if(salary>bestValue){ bestValue = salary; chosen = { team, years, salary, clause: chance(0.25)?"Player Option":"None", year:1}; }
+        }
+        if(chosen){ 
+          p.contract = chosen; 
+          p.team = chosen.team; 
+          p.arena = genArena(p.team); 
+          p.teammates = generateTeammates();
+          p.career.timeline.push(event("Free Agency",`You signed with the ${p.team} (${chosen.years}y, $${chosen.salary}k).`)); 
+          moved = true; 
+        }
+      }
+    } else if(chance(0.08)){ // Reduced trade chance from 18% to 8%
+      const oldTeam = p.team; 
+      p.team = pick(TEAMS.filter(t=>t!==p.team)); 
+      p.arena = genArena(p.team);
+      p.teammates = generateTeammates();
+      p.contract.year = Math.min(p.contract.year+1, p.contract.years);
+      p.career.timeline.push(event("Trade",`Traded from ${oldTeam} to ${p.team}.`)); 
+      moved = true;
+    } else {
+      p.contract.year += 1; // staying put - most common outcome
+    }
+
+    // adjust team chemistry/strength
+    p.teamChem = clamp(p.teamChem + (moved? irnd(-10,10): irnd(-3,6)), 30, 95);
+    p.teamStrength = clamp(p.teamStrength + irnd(-4,4) + (moved? irnd(-6,6): 0), 60, 90);
+
+    // endorsements payouts
+    const endorsementPayout = Math.round(sum(p.endorsements.map(e=>e.value)) * (0.6 + rnd(-0.1, 0.2)));
+    const shoePayout = Math.round(sum(p.shoeDeals.map(e=>e.value)) * (0.8 + rnd(-0.1, 0.2)));
+    const totalPayout = endorsementPayout + shoePayout;
+    p.cash += totalPayout; 
+    if(totalPayout>0) p.career.timeline.push(event("Payout",`Endorsements paid $${totalPayout}k`));
+
+    // small chance endorsement drops due to scandal
+    if(chance(0.08)){ 
+      const allDeals = [...p.endorsements, ...p.shoeDeals];
+      if(allDeals.length > 0) {
+        const ix = irnd(0, allDeals.length - 1); 
+        const isShoe = ix >= p.endorsements.length;
+        const actualIx = isShoe ? ix - p.endorsements.length : ix;
+        const removed = isShoe ? p.shoeDeals.splice(actualIx,1)[0] : p.endorsements.splice(actualIx,1)[0]; 
+        if(removed){ 
+          p.career.timeline.push(event("PR", `${removed.name} ended your deal after a PR hiccup.`)); 
+          p.fame = Math.max(0, p.fame - 3);
+          p.followers = Math.max(0, p.followers - 5000);
+        } 
+      }
+    }
+
+    // fame drift by performance
+    const last = p.career.seasons[p.career.seasons.length-1];
+    if(last){ 
+      const fameGain = (last.averages.pts>22? +6: last.averages.pts>16? +3: -1) + (last.stats.champion? +4:0);
+      p.fame = clamp(p.fame + fameGain, 0, 100); 
+      p.followers += Math.round(fameGain * 2000);
+    }
+  }
+
+  function retireNow(){
+    setGame(prev=>{
+      const p = deepClone(prev);
+      p.retired = true; p.alive = true; p.phase = "Retired";
+      p.career.timeline.push(event("Retired","You have retired."));
+      return p;
+    });
+  }
+
+  function hallOfFameOdds(p){
+    const t=p.career.totals; const o=p.ratings.overall;
+    let score = 0;
+    score += (t.points/1000) * 0.6;
+    score += t.titles * 6 + t.mvps * 10 + t.finalsMVPs * 8 + t.allstars * 2 + t.scoring * 3;
+    score += (o/100) * 10;
+    return clamp(score, 0, 100);
+  }
+
+  function exportSave(){
+    const blob = new Blob([JSON.stringify(game, null, 2)], { type: "application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download=`BasketballLife_${game.name.replace(/\s+/g,'_')}.json`; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  }
+
+  function importSave(json){
+    try{
+      const data = JSON.parse(json);
+      if(!data || !data.name || !data.career) throw new Error("Invalid save");
+      setGame(data); setShowImport(false); pushToast("Save loaded!");
+    }catch(e){ pushToast("Import failed: "+e.message); }
+  }
+
+  // ---------- UI ----------
+  const avg = useMemo(()=> seasonAverages(game.stats), [game.stats]);
+  const careerPPG = game.career.totals.games? game.career.totals.points / game.career.totals.games : 0;
+
+  return (
+    <div className="fade-in">
+      <Header game={game} onReset={resetAll} onExport={exportSave} onImport={()=>setShowImport(true)} onRetire={retireNow} />
+
+      <Tabs current={tab} onSelect={setTab} tabs={["Home","Training","Health","Team","Contracts","Awards","History","Analytics","League"]} />
+
+      {tab==="Home" && (
+        <HomePanel game={game} avg={avg} onWeek={playNextWeek} onEvent={randomLifeEvent} onSimMonth={simMonth} onSimSeason={simSeason} />
+      )}
+
+        {tab==="Training" && (
+          <TrainingPanel game={game} onTrain={actTrain} onEndorse={takeEndorsement} onShoeEndorse={takeShoeEndorsement} 
+                         onPremium={buyPremiumService} endorsements={game.endorsements} shoeDeals={game.shoeDeals} 
+                         premiumServices={game.premiumServices} cash={game.cash} />
+        )}
+
+        {tab==="Health" && (
+          <HealthPanel onHealth={actHealth} cash={game.cash} health={game.health} peak={game.peak} />
+        )}
+
+        {tab==="Team" && (
+          <TeamPanel game={game} avg={avg} onTrade={requestTrade} onContract={requestContract} />
+        )}
+
+        {tab==="Contracts" && (
+          <ContractsPanel game={game} />
+        )}
+
+        {tab==="Awards" && (
+          <AwardsPanel game={game} />
+        )}
+
+        {tab==="History" && (
+          <HistoryPanel game={game} hof={hallOfFameOdds(game)} />
+        )}
+
+        {tab==="Analytics" && (
+          <AnalyticsPanel game={game} />
+        )}
+
+        {tab==="League" && (
+          <LeaguePanel game={game} />
+        )}
+
+        {toast && <Toast text={toast.text} />}
+
+        {showImport && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+            <div className="panel panel-content w-full max-w-lg">
+              <h3 className="text-xl font-bold mb-4">Import Save</h3>
+              <textarea 
+                ref={importRef} 
+                className="w-full h-40 p-3 rounded-lg outline-none resize-none"
+                style={{backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)'}}
+                placeholder="Paste your save JSON here..." 
+              />
+              <div className="flex gap-3 justify-end mt-4">
+                <button className="btn btn-ghost" onClick={()=>setShowImport(false)}>Cancel</button>
+                <button className="btn btn-primary" onClick={()=>importSave(importRef.current.value)}>Load Game</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {championshipToast && (
+          <ChampionshipToast 
+            title={championshipToast.title}
+            titleCount={championshipToast.count}
+            isFinalsMVP={championshipToast.finalsMVP}
+            onClose={() => setChampionshipToast(null)}
+          />
+        )}
+
+        {awardsPopup && (
+          <AwardsPopup 
+            awards={awardsPopup.awards}
+            season={awardsPopup.season}
+            champion={awardsPopup.champion}
+            finalsMVP={awardsPopup.finalsMVP}
+            onClose={() => setAwardsPopup(null)}
+          />
+        )}
+
+        {toast && <Toast text={toast.text} />}
+    </div>
+  );
+}
+
+// ---------- Subcomponents ----------
+function Header({ game, onReset, onExport, onImport, onRetire }){
+  const teamInfo = NBA_TEAMS[game.team];
+  const teamName = teamInfo ? teamInfo.name : game.team;
+  
+  return (
+    <div className="header">
+      <div className="header-content">
+        <div className="player-info">
+          <div className="player-avatar">
+            {game.name.split(' ').map(n => n[0]).join('')}
+          </div>
+          <div className="player-details">
+            <h1>{game.name}</h1>
+            <div className="player-meta">
+              <span>{teamName}</span>
+              <span>#{game.jersey}</span>
+              <span>{game.archetype}</span>
+              <span>{game.ratings.overall} OVR</span>
+              <span>${game.cash}k</span>
+            </div>
+          </div>
+        </div>
+        <div className="header-actions">
+          <button className="btn btn-secondary btn-sm" onClick={onExport}>Export</button>
+          <button className="btn btn-secondary btn-sm" onClick={onImport}>Import</button>
+          <button className="btn btn-ghost btn-sm" onClick={onReset}>New Career</button>
+          {!game.retired && <button className="btn btn-sm" style={{background: '#dc2626', color: 'white'}} onClick={onRetire}>Retire</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Tabs({ current, onSelect, tabs }){
+  return (
+    <div className="tabs">
+      {tabs.map(t=> (
+        <button 
+          key={t} 
+          onClick={()=>onSelect(t)} 
+          className={`tab ${current===t ? 'active' : ''}`}
+        >
+          {t}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function StatPill({ label, value, sub }){
+  return (
+    <div className="stat-card">
+      <div className="stat-label">{label}</div>
+      <div className="stat-value">{value}</div>
+      {sub && <div className="stat-sub">{sub}</div>}
+    </div>
+  );
+}
+
+function HomePanel({ game, avg, onWeek, onEvent, onSimMonth, onSimSeason }){
+  const teamInfo = NBA_TEAMS[game.team];
+  
+  // Get current team standing from persistent standings
+  const standings = getStandings(game);
+  const teamRank = standings.findIndex(team => team.isPlayerTeam) + 1;
+  const ageMultiplier = getAgeMultiplier(game.age);
+  
+  return (
+    <div className="grid-2" style={{gap: '12px'}}>
+      {/* Player Stats - Left Column */}
+      <div>
+        {/* Quick Stats Grid */}
+        <div className="stats-grid">
+          <div className="compact-stat">
+            <div className="compact-stat-label">Overall</div>
+            <div className="compact-stat-value">{game.ratings.overall}</div>
+          </div>
+          <div className="compact-stat">
+            <div className="compact-stat-label">Age</div>
+            <div className="compact-stat-value" style={{color: game.age <= 26 ? '#10b981' : game.age <= 30 ? '#f59e0b' : '#ef4444'}}>{game.age}</div>
+          </div>
+          <div className="compact-stat">
+            <div className="compact-stat-label">Performance</div>
+            <div className="compact-stat-value" style={{color: ageMultiplier >= 1.1 ? '#10b981' : ageMultiplier >= 0.9 ? '#f59e0b' : '#ef4444'}}>{(ageMultiplier * 100).toFixed(0)}%</div>
+          </div>
+          <div className="compact-stat">
+            <div className="compact-stat-label">Health</div>
+            <div className="compact-stat-value">{game.health}</div>
+          </div>
+          <div className="compact-stat">
+            <div className="compact-stat-label">Peak</div>
+            <div className="compact-stat-value">{game.peak}</div>
+          </div>
+          <div className="compact-stat">
+            <div className="compact-stat-label">Morale</div>
+            <div className="compact-stat-value">{game.morale}</div>
+          </div>
+          <div className="compact-stat">
+            <div className="compact-stat-label">Fame</div>
+            <div className="compact-stat-value">{game.fame}</div>
+          </div>
+          <div className="compact-stat">
+            <div className="compact-stat-label">Chemistry</div>
+            <div className="compact-stat-value">{game.teamChem}</div>
+          </div>
+        </div>
+        
+        {/* Season Stats */}
+        <div className="panel panel-content-tight" style={{marginBottom: '12px'}}>
+          <h3 style={{marginBottom: '8px', color: 'var(--team-primary)'}}>Season {game.season} Stats</h3>
+          <div className="grid-4">
+            <div className="compact-stat">
+              <div className="compact-stat-label">PPG</div>
+              <div className="compact-stat-value">{avg.pts.toFixed(1)}</div>
+            </div>
+            <div className="compact-stat">
+              <div className="compact-stat-label">RPG</div>
+              <div className="compact-stat-value">{avg.reb.toFixed(1)}</div>
+            </div>
+            <div className="compact-stat">
+              <div className="compact-stat-label">APG</div>
+              <div className="compact-stat-value">{avg.ast.toFixed(1)}</div>
+            </div>
+            <div className="compact-stat">
+              <div className="compact-stat-label">FG%</div>
+              <div className="compact-stat-value">{(avg.fgPct*100).toFixed(0)}%</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="panel panel-content-tight">
+          <h3 style={{marginBottom: '8px', color: 'var(--team-primary)'}}>Game Actions</h3>
+          <div className="grid-2" style={{gap: '8px'}}>
+            <button className="btn btn-primary" onClick={onWeek}>Next Week</button>
+            <button className="btn btn-secondary" onClick={onEvent}>Life Event</button>
+            <button className="btn btn-team-outline" onClick={onSimMonth}>Sim Month</button>
+            <button className="btn btn-team-outline" onClick={onSimSeason}>Sim Season</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Team & Status - Right Column */}
+      <div>
+        {/* Team Info */}
+        <div className="panel panel-content-tight" style={{marginBottom: '12px'}}>
+          <h3 style={{marginBottom: '8px', color: 'var(--team-primary)'}}>Team Status</h3>
+          <div style={{padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px', marginBottom: '8px'}}>
+            <div style={{fontSize: '18px', fontWeight: 'bold', color: 'var(--team-primary)', marginBottom: '4px'}}>
+              {teamInfo ? teamInfo.name : game.team}
+            </div>
+            <div style={{fontSize: '14px', color: 'var(--text-secondary)'}}>
+              Strength: {teamInfo ? teamInfo.strength : game.teamStrength}/100
+            </div>
+            <div style={{fontSize: '14px', color: 'var(--text-secondary)'}}>
+              Standing: #{teamRank}
+            </div>
+          </div>
+          
+          <div className="grid-2" style={{gap: '8px'}}>
+            <div className="compact-stat">
+              <div className="compact-stat-label">Season</div>
+              <div className="compact-stat-value">{game.season}</div>
+            </div>
+            <div className="compact-stat">
+              <div className="compact-stat-label">Week</div>
+              <div className="compact-stat-value">{game.week}</div>
+            </div>
+          </div>
+          
+          <div style={{marginTop: '8px', padding: '8px', background: 'var(--bg-secondary)', borderRadius: '6px', textAlign: 'center'}}>
+            <div style={{fontSize: '12px', color: 'var(--text-muted)'}}>Phase</div>
+            <div style={{fontSize: '16px', fontWeight: 'bold', color: 'var(--team-primary)'}}>{game.phase}</div>
+          </div>
+        </div>
+
+        {/* Contract Info */}
+        <div className="panel panel-content-tight">
+          <h3 style={{marginBottom: '8px', color: 'var(--team-primary)'}}>Contract</h3>
+          <div style={{padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px'}}>
+            <div style={{fontSize: '18px', fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '4px'}}>
+              ${game.contract.salary}k/year
+            </div>
+            <div style={{fontSize: '14px', color: 'var(--text-secondary)'}}>
+              Year {game.contract.year} of {game.contract.years}
+            </div>
+            {game.contract.clause !== "None" && (
+              <div style={{fontSize: '12px', color: 'var(--team-primary)', marginTop: '4px'}}>
+                {game.contract.clause}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TrainingPanel({ game, onTrain, onEndorse, onShoeEndorse, onPremium, endorsements, shoeDeals, premiumServices, cash }){
+  const [intensity, setIntensity] = useState(1);
+  const trainingOptions = ["Shooting","Finishing","Playmaking","Defense","Rebounding","Stamina","Dunking","Passing","Leadership","Balanced","Recovery"];
+  const ageMultiplier = getAgeMultiplier(game.age);
+  
+  return (
+    <div className="grid-3">
+      {/* Current Player Stats */}
+      <div className="panel panel-content-tight">
+        <h3 style={{marginBottom: '10px', color: 'var(--team-primary)', fontSize: '14px'}}>Current Ratings</h3>
+        
+        {/* Overall Rating - Highlighted */}
+        <div style={{
+          background: 'linear-gradient(135deg, var(--team-primary), var(--team-secondary))',
+          borderRadius: '8px',
+          padding: '8px 12px',
+          marginBottom: '8px',
+          textAlign: 'center'
+        }}>
+          <div style={{fontSize: '10px', color: 'var(--team-text)', opacity: '0.8', fontWeight: '600'}}>OVERALL</div>
+          <div style={{fontSize: '20px', fontWeight: 'bold', color: 'var(--team-text)'}}>{game.ratings.overall}</div>
+        </div>
+
+        {/* Age and Performance */}
+        <div style={{
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(2, 1fr)', 
+          gap: '4px',
+          marginBottom: '12px'
+        }}>
+          <div style={{
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center',
+            padding: '4px 8px',
+            background: game.age <= 26 ? 'rgba(16, 185, 129, 0.1)' : game.age <= 30 ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+            borderRadius: '6px',
+            border: `1px solid ${game.age <= 26 ? 'rgba(16, 185, 129, 0.3)' : game.age <= 30 ? 'rgba(245, 158, 11, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+          }}>
+            <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '500'}}>Age</span>
+            <span style={{fontSize: '12px', fontWeight: 'bold', color: game.age <= 26 ? '#10b981' : game.age <= 30 ? '#f59e0b' : '#ef4444'}}>{game.age}</span>
+          </div>
+          <div style={{
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center',
+            padding: '4px 8px',
+            background: ageMultiplier >= 1.1 ? 'rgba(16, 185, 129, 0.1)' : ageMultiplier >= 0.9 ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+            borderRadius: '6px',
+            border: `1px solid ${ageMultiplier >= 1.1 ? 'rgba(16, 185, 129, 0.3)' : ageMultiplier >= 0.9 ? 'rgba(245, 158, 11, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+          }}>
+            <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '500'}}>Performance</span>
+            <span style={{fontSize: '12px', fontWeight: 'bold', color: ageMultiplier >= 1.1 ? '#10b981' : ageMultiplier >= 0.9 ? '#f59e0b' : '#ef4444'}}>{(ageMultiplier * 100).toFixed(0)}%</span>
+          </div>
+        </div>
+        
+        {/* Core Basketball Stats */}
+        <div style={{marginBottom: '12px'}}>
+          <h4 style={{fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: '600', textTransform: 'uppercase'}}>Basketball Skills</h4>
+          <div style={{
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(2, 1fr)', 
+            gap: '4px'
+          }}>
+            <div style={{
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: '4px 8px',
+              background: 'var(--bg-secondary)',
+              borderRadius: '6px',
+              border: '1px solid var(--glass-border)'
+            }}>
+              <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '500'}}>Shooting</span>
+              <span style={{fontSize: '12px', fontWeight: 'bold', color: 'var(--text-primary)'}}>{game.ratings.shooting}</span>
+            </div>
+            <div style={{
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: '4px 8px',
+              background: 'var(--bg-secondary)',
+              borderRadius: '6px',
+              border: '1px solid var(--glass-border)'
+            }}>
+              <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '500'}}>Finishing</span>
+              <span style={{fontSize: '12px', fontWeight: 'bold', color: 'var(--text-primary)'}}>{game.ratings.finishing}</span>
+            </div>
+            <div style={{
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: '4px 8px',
+              background: 'var(--bg-secondary)',
+              borderRadius: '6px',
+              border: '1px solid var(--glass-border)'
+            }}>
+              <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '500'}}>Playmaking</span>
+              <span style={{fontSize: '12px', fontWeight: 'bold', color: 'var(--text-primary)'}}>{game.ratings.playmaking}</span>
+            </div>
+            <div style={{
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: '4px 8px',
+              background: 'var(--bg-secondary)',
+              borderRadius: '6px',
+              border: '1px solid var(--glass-border)'
+            }}>
+              <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '500'}}>Defense</span>
+              <span style={{fontSize: '12px', fontWeight: 'bold', color: 'var(--text-primary)'}}>{game.ratings.defense}</span>
+            </div>
+            <div style={{
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: '4px 8px',
+              background: 'var(--bg-secondary)',
+              borderRadius: '6px',
+              border: '1px solid var(--glass-border)'
+            }}>
+              <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '500'}}>Rebounding</span>
+              <span style={{fontSize: '12px', fontWeight: 'bold', color: 'var(--text-primary)'}}>{game.ratings.rebounding}</span>
+            </div>
+            <div style={{
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: '4px 8px',
+              background: 'var(--bg-secondary)',
+              borderRadius: '6px',
+              border: '1px solid var(--glass-border)'
+            }}>
+              <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '500'}}>Passing</span>
+              <span style={{fontSize: '12px', fontWeight: 'bold', color: 'var(--text-primary)'}}>{game.ratings.passing}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Physical & Mental Stats */}
+        <div style={{marginBottom: '12px'}}>
+          <h4 style={{fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: '600', textTransform: 'uppercase'}}>Physical & Mental</h4>
+          <div style={{
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(2, 1fr)', 
+            gap: '4px'
+          }}>
+            <div style={{
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: '4px 8px',
+              background: 'var(--bg-secondary)',
+              borderRadius: '6px',
+              border: '1px solid var(--glass-border)'
+            }}>
+              <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '500'}}>Stamina</span>
+              <span style={{fontSize: '12px', fontWeight: 'bold', color: 'var(--text-primary)'}}>{game.ratings.stamina}</span>
+            </div>
+            <div style={{
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: '4px 8px',
+              background: 'var(--bg-secondary)',
+              borderRadius: '6px',
+              border: '1px solid var(--glass-border)'
+            }}>
+              <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '500'}}>Dunking</span>
+              <span style={{fontSize: '12px', fontWeight: 'bold', color: 'var(--text-primary)'}}>{game.ratings.dunking}</span>
+            </div>
+            <div style={{
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: '4px 8px',
+              background: 'var(--bg-secondary)',
+              borderRadius: '6px',
+              border: '1px solid var(--glass-border)'
+            }}>
+              <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '500'}}>Leadership</span>
+              <span style={{fontSize: '12px', fontWeight: 'bold', color: 'var(--text-primary)'}}>{game.ratings.leadership}</span>
+            </div>
+            <div style={{
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: '4px 8px',
+              background: game.health > 70 ? 'rgba(16, 185, 129, 0.1)' : game.health > 30 ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+              borderRadius: '6px',
+              border: `1px solid ${game.health > 70 ? 'rgba(16, 185, 129, 0.3)' : game.health > 30 ? 'rgba(245, 158, 11, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+            }}>
+              <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '500'}}>Health</span>
+              <span style={{fontSize: '12px', fontWeight: 'bold', color: game.health > 70 ? '#10b981' : game.health > 30 ? '#f59e0b' : '#ef4444'}}>{game.health}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Peak Condition - Special highlight */}
+        <div style={{
+          background: game.peak > 70 ? 'rgba(16, 185, 129, 0.1)' : game.peak > 30 ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+          border: `1px solid ${game.peak > 70 ? 'rgba(16, 185, 129, 0.3)' : game.peak > 30 ? 'rgba(245, 158, 11, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+          borderRadius: '8px',
+          padding: '6px 10px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '8px'
+        }}>
+          <span style={{fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '600'}}>PEAK CONDITION</span>
+          <span style={{fontSize: '14px', fontWeight: 'bold', color: game.peak > 70 ? '#10b981' : game.peak > 30 ? '#f59e0b' : '#ef4444'}}>{game.peak}</span>
+        </div>
+
+        <div style={{fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center'}}>
+          💡 Train lower ratings for maximum improvement
+        </div>
+      </div>
+      {/* Training Programs */}
+      <div className="panel panel-content-tight">
+        <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>Training Programs</h3>
+        
+        <div style={{marginBottom: '12px'}}>
+          <div style={{fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px'}}>Intensity</div>
+          <div style={{display: 'flex', gap: '4px'}}>
+            {[1,2,3].map(i => (
+              <button 
+                key={i} 
+                onClick={() => setIntensity(i)} 
+                className={intensity === i ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+                style={{flex: 1}}
+              >
+                {i}x
+              </button>
+            ))}
+          </div>
+        </div>
+        
+        <div className="grid-4" style={{gap: '6px'}}>
+          {trainingOptions.slice(0, 8).map(option=> (
+            <button 
+              key={option} 
+              onClick={()=>onTrain(option, intensity)} 
+              className="btn btn-team-outline btn-sm"
+              style={{fontSize: '11px', padding: '6px 8px'}}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+        
+        <div style={{marginTop: '8px', display: 'flex', gap: '4px'}}>
+          <button onClick={()=>onTrain("Balanced", intensity)} className="btn btn-primary btn-sm" style={{flex: 1}}>
+            Balanced
+          </button>
+          <button onClick={()=>onTrain("Recovery", intensity)} className="btn btn-secondary btn-sm" style={{flex: 1}}>
+            Recovery
+          </button>
+        </div>
+      </div>
+
+      {/* Endorsements */}
+      <div className="panel panel-content-tight">
+        <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>Brand Deals</h3>
+        
+        <div style={{marginBottom: '12px'}}>
+          <div style={{fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px'}}>Cash: ${cash}k</div>
+          <div style={{display: 'flex', gap: '4px'}}>
+            <button onClick={onEndorse} className="btn btn-team btn-sm" style={{flex: 1}}>
+              Get Endorsement
+            </button>
+            <button onClick={onShoeEndorse} className="btn btn-team-outline btn-sm" style={{flex: 1}}>
+              Shoe Deal
+            </button>
+          </div>
+        </div>
+        
+        <div style={{maxHeight: '120px', overflowY: 'auto'}}>
+          {[...endorsements, ...shoeDeals].map((deal, i) => (
+            <div key={i} style={{
+              padding: '6px 8px',
+              marginBottom: '4px',
+              background: 'var(--bg-secondary)',
+              borderRadius: '6px',
+              borderLeft: '3px solid var(--team-primary)'
+            }}>
+              <div style={{fontSize: '12px', fontWeight: 'bold'}}>{deal.name}</div>
+              <div style={{fontSize: '11px', color: 'var(--text-secondary)'}}>${deal.value}k/year</div>
+            </div>
+          ))}
+          {endorsements.length === 0 && shoeDeals.length === 0 && (
+            <div style={{fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '12px'}}>
+              No deals yet
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Premium Services */}
+      <div className="panel panel-content-tight">
+        <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>Premium Services</h3>
+        
+        <button onClick={onPremium} className="btn btn-primary btn-sm" style={{width: '100%', marginBottom: '12px'}}>
+          Buy Premium Service
+        </button>
+        
+        <div style={{maxHeight: '120px', overflowY: 'auto'}}>
+          {premiumServices.map((service, i) => (
+            <div key={i} style={{
+              padding: '6px 8px',
+              marginBottom: '4px',
+              background: 'linear-gradient(135deg, var(--team-primary), var(--team-secondary))',
+              color: 'var(--team-text)',
+              borderRadius: '6px',
+              opacity: 0.9
+            }}>
+              <div style={{fontSize: '12px', fontWeight: 'bold'}}>{service.name}</div>
+              <div style={{fontSize: '11px', opacity: 0.8}}>{service.weeksLeft} weeks left</div>
+            </div>
+          ))}
+          {premiumServices.length === 0 && (
+            <div style={{fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '12px'}}>
+              No active services
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HealthPanel({ onHealth, cash, health, peak }){
+  const healthOptions = [
+    { name: "Diet", cost: 15, health: 8, peak: 3, desc: "Nutrition plan" },
+    { name: "Gym", cost: 25, health: 12, peak: 5, desc: "Training session" },
+    { name: "Cryotherapy", cost: 80, health: 20, peak: 15, desc: "Recovery treatment" },
+  ];
+  
+  return (
+    <div className="grid-3">
+      {/* Health Services */}
+      <div className="panel panel-content-tight">
+        <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>Health Services</h3>
+        <div style={{marginBottom: '12px', fontSize: '14px', fontWeight: 'bold', color: 'var(--team-primary)'}}>
+          Cash: ${cash}k
+        </div>
+        <div className="grid-4" style={{gap: '6px'}}>
+          {healthOptions.map(option=> (
+            <button 
+              key={option.name} 
+              onClick={()=>onHealth(option.name)}
+              className={cash >= option.cost ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm"}
+              disabled={cash < option.cost}
+              style={{
+                fontSize: '11px', 
+                padding: '8px 6px',
+                opacity: cash >= option.cost ? 1 : 0.5
+              }}
+            >
+              <div>{option.name}</div>
+              <div style={{fontSize: '10px'}}>${option.cost}k</div>
+            </button>
+          ))}
+        </div>
+        <div style={{fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px'}}>
+          Health affects accuracy & injury resistance. Peak affects minutes & performance.
+        </div>
+      </div>
+
+      {/* Current Status */}
+      <div className="panel panel-content-tight">
+        <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>Physical Status</h3>
+        <div className="stats-grid">
+          <div className="compact-stat">
+            <div className="compact-stat-label">Health</div>
+            <div className="compact-stat-value">{health}</div>
+          </div>
+          <div className="compact-stat">
+            <div className="compact-stat-label">Peak</div>
+            <div className="compact-stat-value">{peak}</div>
+          </div>
+        </div>
+        
+        <div style={{marginTop: '12px'}}>
+          <div style={{marginBottom: '6px'}}>
+            <div style={{fontSize: '12px', color: 'var(--text-secondary)'}}>Health Level</div>
+            <div style={{
+              width: '100%', 
+              height: '8px', 
+              background: 'var(--bg-secondary)', 
+              borderRadius: '4px',
+              overflow: 'hidden'
+            }}>
+              <div style={{
+                width: `${health}%`, 
+                height: '100%', 
+                background: health > 70 ? 'var(--team-primary)' : health > 30 ? '#f59e0b' : '#ef4444',
+                transition: 'width 0.3s ease'
+              }}></div>
+            </div>
+          </div>
+          
+          <div>
+            <div style={{fontSize: '12px', color: 'var(--text-secondary)'}}>Peak Condition</div>
+            <div style={{
+              width: '100%', 
+              height: '8px', 
+              background: 'var(--bg-secondary)', 
+              borderRadius: '4px',
+              overflow: 'hidden'
+            }}>
+              <div style={{
+                width: `${peak}%`, 
+                height: '100%', 
+                background: peak > 70 ? 'var(--team-secondary)' : peak > 30 ? '#f59e0b' : '#ef4444',
+                transition: 'width 0.3s ease'
+              }}></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Health Tips */}
+      <div className="panel panel-content-tight">
+        <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>Health Guide</h3>
+        <div style={{fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4'}}>
+          <div style={{marginBottom: '8px'}}>
+            <strong style={{color: 'var(--team-primary)'}}>Diet:</strong> Affordable daily nutrition boost
+          </div>
+          <div style={{marginBottom: '8px'}}>
+            <strong style={{color: 'var(--team-primary)'}}>Gym:</strong> Balanced training and recovery
+          </div>
+          <div style={{marginBottom: '8px'}}>
+            <strong style={{color: 'var(--team-primary)'}}>Cryotherapy:</strong> Maximum recovery for important games
+          </div>
+          <div style={{fontSize: '11px', color: 'var(--text-muted)', marginTop: '12px'}}>
+            💡 Use recovery services before important games or when health is low
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TeamPanel({ game, avg, onTrade, onContract }){
+  const teamInfo = NBA_TEAMS[game.team];
+  
+  // Use persistent standings from game state
+  const standings = getStandings(game);
+  const playerTeamRank = standings.findIndex(team => team.isPlayerTeam) + 1;
+  const conferenceStandings = standings.filter(team => 
+    team.conference === teamInfo?.conference
+  ).slice(0, 8); // Top 8 in conference
+
+  return (
+    <div className="grid-3">
+      {/* Team Status */}
+      <div className="panel panel-content-tight">
+        <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>Team Status</h3>
+        <div style={{padding: '16px', background: 'linear-gradient(135deg, var(--team-primary), var(--team-secondary))', borderRadius: '12px', marginBottom: '12px', color: 'var(--team-text)'}}>
+          <div style={{fontSize: '20px', fontWeight: 'bold', marginBottom: '4px'}}>
+            {teamInfo ? teamInfo.name : game.team}
+          </div>
+          <div style={{fontSize: '14px', opacity: '0.9'}}>
+            #{playerTeamRank} in League • {teamInfo?.conference} Conference
+          </div>
+          <div style={{fontSize: '14px', opacity: '0.9'}}>
+            Strength: {teamInfo ? teamInfo.strength : game.teamStrength}/100
+          </div>
+        </div>
+        
+        <div className="grid-2" style={{gap: '8px', marginBottom: '12px'}}>
+          <div className="compact-stat">
+            <div className="compact-stat-label">Chemistry</div>
+            <div className="compact-stat-value">{game.teamChem}</div>
+          </div>
+          <div className="compact-stat">
+            <div className="compact-stat-label">Your Role</div>
+            <div className="compact-stat-value" style={{fontSize: '12px'}}>Star</div>
+          </div>
+        </div>
+        
+        <div className="grid-2" style={{gap: '6px'}}>
+          <button className="btn btn-primary btn-sm" onClick={onContract}>Renegotiate</button>
+          <button className="btn btn-secondary btn-sm" onClick={onTrade}>Request Trade</button>
+        </div>
+      </div>
+
+      {/* Conference Standings */}
+      <div className="panel panel-content-tight">
+        <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>{teamInfo?.conference} Conference</h3>
+        <div style={{maxHeight: '300px', overflowY: 'auto'}}>
+          {conferenceStandings.map((team, index) => (
+            <div 
+              key={team.team} 
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '8px 10px',
+                marginBottom: '4px',
+                background: team.isPlayerTeam ? 'var(--team-primary)' : 'var(--bg-secondary)',
+                color: team.isPlayerTeam ? 'var(--team-text)' : 'var(--text-primary)',
+                borderRadius: '6px',
+                fontSize: '13px',
+                opacity: team.isPlayerTeam ? 1 : 0.9
+              }}
+            >
+              <div>
+                <span style={{fontWeight: 'bold', marginRight: '8px'}}>#{index + 1}</span>
+                <span style={{fontWeight: team.isPlayerTeam ? 'bold' : 'normal'}}>
+                  {team.name}
+                </span>
+              </div>
+              <div style={{fontWeight: 'bold'}}>
+                {team.wins}-{team.losses}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Teammates */}
+      <div className="panel panel-content-tight">
+        <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>Teammates</h3>
+        <div style={{maxHeight: '300px', overflowY: 'auto'}}>
+          {game.teammates.map((teammate, i) => (
+            <div key={i} style={{
+              padding: '10px',
+              marginBottom: '6px',
+              background: 'var(--bg-secondary)',
+              borderRadius: '8px',
+              borderLeft: '3px solid var(--team-primary)'
+            }}>
+              <div style={{fontWeight: 'bold', fontSize: '14px', marginBottom: '2px'}}>
+                {teammate.name}
+              </div>
+              <div style={{fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '2px'}}>
+                {teammate.position} • {teammate.overall} OVR
+              </div>
+              <div style={{fontSize: '11px', color: 'var(--text-muted)'}}>
+                {teammate.ppg}p {teammate.rpg}r {teammate.apg}a
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnalyticsPanel({ game }){
+  const seasons = game.career?.seasons || [];
+  const careerPPG = seasons.map(s => s.averages?.pts || 0);
+  const careerPER = seasons.map(s => s.averages?.per || 0);
+  const careerTS = seasons.map(s => s.averages?.ts || 0);
+  
+  // Calculate analytics data safely
+  const playerScore = calculatePlayerScore(game);
+  const hofChance = getHallOfFameChance(game);
+  const currentRankings = generateCurrentLeagueRankings(game);
+  const allTimeRankings = generateAllTimeRankings(game);
+  
+  const playerCurrentRank = currentRankings.find(p => p.isPlayer)?.rank || "N/A";
+  const playerAllTimeRank = allTimeRankings.find(p => p.isPlayer)?.rank || "N/A";
+  
+  // Safely get awards data from totals
+  const totals = game.career?.totals || {};
+  const championships = totals.titles || 0;
+  const mvpAwards = totals.mvps || 0;
+  
+  return (
+    <div className="grid-3">
+      {/* Hall of Fame & Legacy */}
+      <div className="panel panel-content-tight">
+        <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>Hall of Fame Analysis</h3>
+        
+        {seasons.length > 0 ? (
+          <div style={{gap: '12px', display: 'flex', flexDirection: 'column'}}>
+            {/* Hall of Fame Probability */}
+            <div style={{
+              background: hofChance >= 60 ? 'linear-gradient(135deg, #10b981, #059669)' : 
+                          hofChance >= 30 ? 'linear-gradient(135deg, #f59e0b, #d97706)' :
+                          'linear-gradient(135deg, #6b7280, #4b5563)',
+              borderRadius: '12px',
+              padding: '12px',
+              textAlign: 'center'
+            }}>
+              <div style={{fontSize: '11px', color: 'white', opacity: '0.9', fontWeight: '600', marginBottom: '4px'}}>
+                HALL OF FAME PROBABILITY
+              </div>
+              <div style={{fontSize: '24px', fontWeight: 'bold', color: 'white'}}>{hofChance}%</div>
+              <div style={{fontSize: '10px', color: 'white', opacity: '0.8', marginTop: '2px'}}>
+                {hofChance >= 80 ? "Lock for HOF" :
+                 hofChance >= 60 ? "Strong Candidate" :
+                 hofChance >= 30 ? "Building Legacy" :
+                 "Work in Progress"}
+              </div>
+            </div>
+
+            {/* Legacy Score */}
+            <div className="stats-grid">
+              <div className="compact-stat">
+                <div className="compact-stat-label">Legacy Score</div>
+                <div className="compact-stat-value">{playerScore}</div>
+              </div>
+              <div className="compact-stat">
+                <div className="compact-stat-label">Career Seasons</div>
+                <div className="compact-stat-value">{seasons.length}</div>
+              </div>
+              <div className="compact-stat">
+                <div className="compact-stat-label">Championships</div>
+                <div className="compact-stat-value">{championships}</div>
+              </div>
+              <div className="compact-stat">
+                <div className="compact-stat-label">MVP Awards</div>
+                <div className="compact-stat-value">{mvpAwards}</div>
+              </div>
+            </div>
+
+            {/* HOF Requirements */}
+            <div style={{
+              background: 'var(--bg-secondary)',
+              borderRadius: '8px',
+              padding: '8px',
+              fontSize: '10px',
+              color: 'var(--text-secondary)'
+            }}>
+              <div style={{fontWeight: '600', marginBottom: '4px'}}>HOF Factors:</div>
+              <div>• Career Stats & Efficiency</div>
+              <div>• Championships & Finals MVPs</div>
+              <div>• Individual Awards (MVP, All-Star)</div>
+              <div>• Career Longevity</div>
+            </div>
+          </div>
+        ) : (
+          <div style={{color: 'var(--text-muted)', textAlign: 'center', padding: '20px', fontSize: '12px'}}>
+            Complete your first season to see Hall of Fame analysis
+          </div>
+        )}
+      </div>
+
+      {/* Current League Rankings */}
+      <div className="panel panel-content-tight">
+        <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>Current Season Rankings</h3>
+        
+        {seasons.length > 0 ? (
+          <div style={{gap: '8px', display: 'flex', flexDirection: 'column'}}>
+            {/* Player's Current Rank */}
+            <div style={{
+              background: playerCurrentRank <= 5 ? 'linear-gradient(135deg, #10b981, #059669)' :
+                          playerCurrentRank <= 10 ? 'linear-gradient(135deg, #f59e0b, #d97706)' :
+                          'linear-gradient(135deg, #6b7280, #4b5563)',
+              borderRadius: '8px',
+              padding: '8px',
+              textAlign: 'center'
+            }}>
+              <div style={{fontSize: '10px', color: 'white', opacity: '0.9', fontWeight: '600'}}>YOUR LEAGUE RANK</div>
+              <div style={{fontSize: '18px', fontWeight: 'bold', color: 'white'}}>#{playerCurrentRank}</div>
+            </div>
+
+            {/* Top 5 Current Players */}
+            <div style={{fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px', fontWeight: '600'}}>
+              Top Players This Season (by PER)
+            </div>
+            <div style={{maxHeight: '140px', overflowY: 'auto', gap: '2px', display: 'flex', flexDirection: 'column'}}>
+              {currentRankings.slice(0, 5).map((player, index) => (
+                <div key={index} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '6px 8px',
+                  borderRadius: '6px',
+                  background: player.isPlayer ? 'var(--team-primary)' : 'var(--bg-secondary)',
+                  color: player.isPlayer ? 'var(--team-text)' : 'var(--text-primary)',
+                  fontSize: '10px'
+                }}>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '6px'}}>
+                    <span style={{fontWeight: 'bold', width: '16px'}}>#{player.rank}</span>
+                    <div>
+                      <div style={{fontWeight: '600'}}>{player.name}</div>
+                      <div style={{opacity: '0.7'}}>{player.team}</div>
+                    </div>
+                  </div>
+                  <div style={{textAlign: 'right'}}>
+                    <div>{fmt(player.ppg)} PPG</div>
+                    <div style={{opacity: '0.7'}}>{fmt(player.per)} PER</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div style={{color: 'var(--text-muted)', fontSize: '12px'}}>Complete a season to see rankings</div>
+        )}
+      </div>
+
+      {/* All-Time Rankings */}
+      <div className="panel panel-content-tight">
+        <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>All-Time Rankings</h3>
+        
+        {seasons.length > 0 ? (
+          <div style={{gap: '8px', display: 'flex', flexDirection: 'column'}}>
+            {/* Player's All-Time Rank */}
+            <div style={{
+              background: playerAllTimeRank <= 10 ? 'linear-gradient(135deg, #fbbf24, #f59e0b)' :
+                          playerAllTimeRank <= 50 ? 'linear-gradient(135deg, #10b981, #059669)' :
+                          'linear-gradient(135deg, #6b7280, #4b5563)',
+              borderRadius: '8px',
+              padding: '8px',
+              textAlign: 'center'
+            }}>
+              <div style={{fontSize: '10px', color: 'white', opacity: '0.9', fontWeight: '600'}}>ALL-TIME RANK</div>
+              <div style={{fontSize: '18px', fontWeight: 'bold', color: 'white'}}>#{playerAllTimeRank}</div>
+              <div style={{fontSize: '9px', color: 'white', opacity: '0.8'}}>Legacy Score: {playerScore}</div>
+            </div>
+
+            {/* Top All-Time Players */}
+            <div style={{fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px', fontWeight: '600'}}>
+              All-Time Greats (by Legacy Score)
+            </div>
+            <div style={{maxHeight: '160px', overflowY: 'auto', gap: '2px', display: 'flex', flexDirection: 'column'}}>
+              {allTimeRankings.slice(0, 10).map((player, index) => (
+                <div key={index} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '6px 8px',
+                  borderRadius: '6px',
+                  background: player.isPlayer ? 'var(--team-primary)' : 
+                             player.rank <= 3 ? 'linear-gradient(135deg, rgba(251, 191, 36, 0.1), rgba(245, 158, 11, 0.1))' :
+                             'var(--bg-secondary)',
+                  color: player.isPlayer ? 'var(--team-text)' : 'var(--text-primary)',
+                  fontSize: '10px',
+                  border: player.rank <= 3 ? '1px solid rgba(251, 191, 36, 0.3)' : '1px solid transparent'
+                }}>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '6px'}}>
+                    <span style={{fontWeight: 'bold', width: '16px'}}>
+                      {player.rank <= 3 ? 
+                        (player.rank === 1 ? '🥇' : player.rank === 2 ? '🥈' : '🥉') : 
+                        `#${player.rank}`}
+                    </span>
+                    <div>
+                      <div style={{fontWeight: '600'}}>{player.name}</div>
+                      <div style={{opacity: '0.7'}}>{player.championships}🏆 {player.mvps}👑</div>
+                    </div>
+                  </div>
+                  <div style={{textAlign: 'right'}}>
+                    <div style={{fontWeight: '600'}}>{player.score}</div>
+                    <div style={{opacity: '0.7'}}>Legacy</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div style={{color: 'var(--text-muted)', fontSize: '12px'}}>Build your legacy to see all-time rankings</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LeaguePanel({ game }){
+  // Use persistent standings from game state
+  const eastStandings = getConferenceStandings(game, "East");
+  const westStandings = getConferenceStandings(game, "West");
+
+  const renderStandings = (teams, conference) => (
+    <div className="panel panel-content-tight">
+      <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>{conference} Conference</h3>
+      <div style={{gap: '4px', display: 'flex', flexDirection: 'column'}}>
+        {teams.map((team, index) => (
+          <div 
+            key={team.team} 
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              backgroundColor: team.isPlayerTeam ? 'var(--team-primary)' : 'var(--bg-secondary)',
+              opacity: team.isPlayerTeam ? '0.9' : '0.7',
+              border: team.isPlayerTeam ? '1px solid var(--team-secondary)' : '1px solid transparent'
+            }}
+          >
+            <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+              <span style={{fontSize: '12px', fontWeight: 'bold', color: 'var(--text-secondary)', width: '20px'}}>{index + 1}</span>
+              <div>
+                <div style={{
+                  fontSize: '13px', 
+                  fontWeight: '600',
+                  color: team.isPlayerTeam ? 'var(--team-text)' : 'var(--text-primary)'
+                }}>
+                  {team.name}
+                </div>
+                <div style={{fontSize: '10px', color: team.isPlayerTeam ? 'var(--team-text)' : 'var(--text-muted)'}}>
+                  Strength: {team.baseStrength || team.currentStrength}
+                </div>
+              </div>
+            </div>
+            <div style={{textAlign: 'right'}}>
+              <div style={{
+                fontSize: '13px', 
+                fontWeight: 'bold',
+                color: team.isPlayerTeam ? 'var(--team-text)' : 'var(--text-primary)'
+              }}>
+                {team.wins}-{team.losses}
+              </div>
+              <div style={{
+                fontSize: '11px',
+                color: team.isPlayerTeam ? 'var(--team-text)' : 'var(--text-secondary)'
+              }}>
+                {(team.winPct * 100).toFixed(1)}%
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="grid-2">
+      {renderStandings(eastStandings, "Eastern")}
+      {renderStandings(westStandings, "Western")}
+    </div>
+  );
+}
+
+function ContractsPanel({ game }){
+  return (
+    <div className="grid lg:grid-cols-2 gap-6">
+      <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 border border-slate-700">
+        <div className="font-bold text-xl mb-4 text-slate-100">Current Contract</div>
+        <div className="space-y-3">
+          <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-600">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="text-sm text-slate-400">Team</div>
+                <div className="font-semibold text-slate-200">{game.team}</div>
+              </div>
+              <div>
+                <div className="text-sm text-slate-400">Years</div>
+                <div className="font-semibold text-slate-200">{game.contract.year}/{game.contract.years}</div>
+              </div>
+              <div>
+                <div className="text-sm text-slate-400">Total Value</div>
+                <div className="font-semibold text-emerald-400">${game.contract.salary}k</div>
+              </div>
+              <div>
+                <div className="text-sm text-slate-400">Clause</div>
+                <div className="font-semibold text-slate-200">{game.contract.clause}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="text-slate-400 text-sm mt-4">
+          Free agency or trades happen automatically in Offseason based on performance, fame, and social media following.
+        </div>
+      </div>
+      
+      <div className="space-y-6">
+        <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 border border-slate-700">
+          <div className="font-bold text-xl mb-4 text-slate-100">Career Earnings</div>
+          <div className="text-4xl font-black text-emerald-400 mb-2">${game.cash}k</div>
+          <div className="text-slate-400 text-sm mb-4">Includes salaries & endorsement payouts</div>
+          
+          <div className="space-y-2">
+            <StatPill label="Social Media" value={`${(game.followers/1000).toFixed(0)}K followers`} />
+            <StatPill label="Fame Level" value={`${game.fame}/100`} />
+          </div>
+        </div>
+        
+        <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 border border-slate-700">
+          <div className="font-bold text-xl mb-4 text-slate-100">Active Deals</div>
+          
+          {game.endorsements.length > 0 && (
+            <>
+              <div className="font-semibold mb-2 text-slate-300">Endorsements</div>
+              {game.endorsements.map((e,i)=>(
+                <div key={i} className="flex justify-between text-sm bg-slate-800/50 rounded-xl px-3 py-2 mb-2 border border-slate-600">
+                  <div className="font-medium">{e.name}</div>
+                  <div className="text-emerald-400">${e.value}k/yr</div>
+                </div>
+              ))}
+            </>
+          )}
+          
+          {game.shoeDeals.length > 0 && (
+            <>
+              <div className="font-semibold mb-2 mt-4 text-slate-300">Shoe Deals</div>
+              {game.shoeDeals.map((e,i)=>(
+                <div key={i} className="flex justify-between text-sm bg-blue-900/20 rounded-xl px-3 py-2 mb-2 border border-blue-600/30">
+                  <div className="font-medium">{e.name}</div>
+                  <div className="text-blue-400">${e.value}k/yr • {e.years}y</div>
+                </div>
+              ))}
+            </>
+          )}
+          
+          {game.endorsements.length === 0 && game.shoeDeals.length === 0 && (
+            <div className="text-slate-400 text-sm">No deals yet. Build your brand in Training tab.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AwardsPanel({ game }){
+  const grouped = game.career.awards.reduce((acc,a)=>{(acc[a.season]=acc[a.season]||[]).push(a.award); return acc;},{});
+  return (
+    <div className="grid lg:grid-cols-2 gap-6">
+      <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 border border-slate-700">
+        <div className="font-bold text-xl mb-4 text-slate-100">Season Awards</div>
+        {Object.keys(grouped).length? (
+          <div className="space-y-3">
+            {Object.entries(grouped).map(([s, list])=> (
+              <div key={s} className="bg-gradient-to-r from-amber-900/20 to-yellow-900/20 rounded-xl p-4 border border-amber-600/30">
+                <div className="font-semibold text-amber-200">Season {s}</div>
+                <div className="text-sm text-amber-100 mt-1">{list.join(", ")}</div>
+              </div>
+            ))}
+          </div>
+        ): <div className="text-slate-400 text-center py-8">No awards yet. Time to ball out!</div>}
+      </div>
+      
+      <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 border border-slate-700">
+        <div className="font-bold text-xl mb-4 text-slate-100">Career Achievements</div>
+        <div className="grid grid-cols-2 gap-3">
+          <StatPill label="Games" value={game.career.totals.games.toLocaleString()} />
+          <StatPill label="Points" value={game.career.totals.points.toLocaleString()} />
+          <StatPill label="Career PPG" value={fmt(game.career.totals.games? game.career.totals.points/game.career.totals.games:0)} />
+          <StatPill label="Career APG" value={fmt(game.career.totals.games? game.career.totals.assists/game.career.totals.games:0)} />
+          <StatPill label="Career RPG" value={fmt(game.career.totals.games? game.career.totals.rebounds/game.career.totals.games:0)} />
+          <StatPill label="Titles" value={game.career.totals.titles} />
+          <StatPill label="MVPs" value={game.career.totals.mvps} />
+          <StatPill label="Finals MVPs" value={game.career.totals.finalsMVPs} />
+          <StatPill label="All-Stars" value={game.career.totals.allstars} />
+          <StatPill label="DPOY" value={game.career.totals.dpoys} />
+          <StatPill label="6MOY" value={game.career.totals.sixmoys} />
+          <StatPill label="Scoring Titles" value={game.career.totals.scoring} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HistoryPanel({ game, hof }){
+  return (
+    <div className="grid lg:grid-cols-3 gap-6">
+      <div className="lg:col-span-2 bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 border border-slate-700">
+        <div className="font-bold text-xl mb-4 text-slate-100">Career Timeline</div>
+        <div className="max-h-[500px] overflow-auto pr-2 space-y-3">
+          {game.career.timeline.slice().reverse().map(ev=> (
+            <div key={ev.id} className={`bg-slate-800/50 rounded-xl p-3 border border-slate-600 ${
+              ev.type === 'Championship' ? 'border-amber-500/50 bg-amber-900/10' :
+              ev.type === 'Awards' ? 'border-purple-500/50 bg-purple-900/10' :
+              ev.type === 'Injury' ? 'border-red-500/50 bg-red-900/10' :
+              ev.type === 'Trade' ? 'border-blue-500/50 bg-blue-900/10' : ''
+            }`}>
+              <div className="text-xs text-slate-400 font-medium">{ev.type}</div>
+              <div className="text-sm text-slate-200 mt-1">{ev.text}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      
+      <div className="space-y-6">
+        <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 border border-slate-700">
+          <div className="font-bold text-xl mb-4 text-slate-100">Legacy</div>
+          <div className="space-y-4">
+            <div>
+              <div className="text-sm text-slate-300 mb-2">Hall of Fame Odds</div>
+              <Bar label="" value={hof} />
+              <div className="text-lg font-bold text-center mt-2 text-amber-400">{Math.round(hof)}%</div>
+            </div>
+            
+            {game.retired && (
+              <div className="text-sm text-slate-300 bg-slate-800/50 rounded-xl p-3 border border-slate-600">
+                {hof>=60? "Congratulations! You're projected to enter the Hall of Fame soon." : 
+                 hof>=40? "A solid career - you made your mark on the game." :
+                 "A respectable career - every journey starts somewhere."}
+              </div>
+            )}
+          </div>
+        </div>
+        
+        <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 border border-slate-700">
+          <div className="font-bold text-xl mb-4 text-slate-100">Season History</div>
+          {game.career.seasons.length? (
+            <div className="space-y-2 max-h-80 overflow-auto pr-2">
+              {game.career.seasons.map(s=> (
+                <div key={s.season} className={`bg-slate-800/50 rounded-xl p-3 border border-slate-600 ${
+                  s.stats.champion ? 'border-amber-500/50 bg-amber-900/10' : ''
+                }`}>
+                  <div className="text-xs text-slate-400">Season {s.season} • {s.team} • {s.overall} OVR</div>
+                  <div className="text-sm text-slate-200">
+                    {fmt(s.averages.pts)}p {fmt(s.averages.reb)}r {fmt(s.averages.ast)}a • {s.stats.wins}-{s.stats.losses}
+                    {s.stats.champion && " CHAMP"}
+                    {s.stats.finalsMVP && " FMVP"}
+                  </div>
+                  <div className="text-xs text-slate-400">PER: {fmt(s.averages.per || 0)} • TS: {fmt((s.averages.ts || 0)*100,1)}%</div>
+                </div>
+              ))}
+            </div>
+          ): <div className="text-slate-400 text-sm">No completed seasons yet.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Gauge({ label, value }){
+  return (
+    <div className="progress-container">
+      <div className="progress-label">
+        <span className="text-muted font-medium text-xs uppercase tracking-wide">{label}</span>
+        <span className="font-bold text-sm">{Math.round(value)}</span>
+      </div>
+      <div className="progress-bar">
+        <div className="progress-fill" style={{ width: `${clamp(value,0,100)}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function Bar({ label, value }){
+  return (
+    <div className="progress-container">
+      <div className="progress-label">
+        <span className="font-medium">{label}</span>
+        <span className="font-bold">{Math.round(value)}</span>
+      </div>
+      <div className="progress-bar">
+        <div className="progress-fill" style={{ width: `${clamp(value,0,100)}%` }} />
+      </div>
+    </div>
+  );
+}
+
+// ...removed duplicate StatPill definition...
+
+function Toast({ text }){
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 panel panel-content-tight z-50 fade-in">
+      <div className="font-medium text-center">{text}</div>
+    </div>
+  );
+}
+
+function ChampionshipToast({ title, titleCount, isFinalsMVP, onClose }){
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 fade-in">
+      <div className="panel panel-content bg-gradient-to-r from-yellow-400 to-yellow-600 text-black text-center max-w-md mx-4">
+        <div className="text-3xl font-bold mb-4">NBA CHAMPION!</div>
+        <div className="text-xl mb-4">
+          You got a ring! This is your <strong>#{titleCount}</strong> championship{isFinalsMVP ? ' and you won Finals MVP!' : '!'}
+        </div>
+        <button className="btn bg-black text-yellow-400 hover:bg-gray-800 font-bold px-8 py-3" onClick={onClose}>
+          Amazing!
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AwardsPopup({ awards, season, champion, finalsMVP, onClose }){
+  const getAwardEmoji = (award) => {
+    switch(award) {
+      case "MVP": return "";
+      case "Finals MVP": return "";
+      case "NBA Champion": return "";
+      case "DPOY": return "";
+      case "6MOY": return "";
+      case "ROY": return "";
+      case "Scoring Title": return "";
+      case "All-Star": return "";
+      case "MIP": return "";
+      default: return "";
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 fade-in">
+      <div className="panel panel-content text-center max-w-lg mx-4">
+        <div className="text-2xl font-bold mb-6 text-team-primary">Season {season} Awards</div>
+        <div className="space-y-3 mb-6">
+          {awards.map((award, index) => (
+            <div key={index} className="flex items-center justify-center gap-3 p-3 bg-bg-tertiary rounded-lg">
+              <span className="text-2xl">{getAwardEmoji(award)}</span>
+              <span className="text-lg font-semibold">{award}</span>
+            </div>
+          ))}
+        </div>
+        <button className="btn btn-team font-bold px-8 py-3" onClick={onClose}>
+          Fantastic!
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function cap(s){ return s.slice(0,1).toUpperCase()+s.slice(1); }
+
+// ---------- Persistence ----------
+function saveGame(game){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(game)); }catch{} }
+function loadGame(){ try{ const s = localStorage.getItem(STORAGE_KEY); return s? JSON.parse(s): null; }catch{ return null; } }
