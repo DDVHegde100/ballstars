@@ -21,40 +21,97 @@ const hexToRgb = (hex) => {
   } : {r: 59, g: 130, b: 246}; // Default to blue if parsing fails
 };
 
-// Player ranking and Hall of Fame functions
+// Player ranking and Hall of Fame functions with enhanced efficiency calculations
 const calculatePlayerScore = (game) => {
   const career = game.career;
   if (!career || !career.seasons || career.seasons.length === 0) return 0;
   
   const totals = career.totals || {};
   const seasons = career.seasons;
+  const gamesPlayed = Math.max(totals.games || 1, 1);
   
-  // Base statistical contribution - safely handle missing data
-  const avgPPG = (totals.points || 0) / Math.max(totals.games || 1, 1);
-  const avgRPG = (totals.rebounds || 0) / Math.max(totals.games || 1, 1);
-  const avgAPG = (totals.assists || 0) / Math.max(totals.games || 1, 1);
+  // Advanced statistical metrics
+  const avgPPG = (totals.points || 0) / gamesPlayed;
+  const avgRPG = (totals.rebounds || 0) / gamesPlayed;
+  const avgAPG = (totals.assists || 0) / gamesPlayed;
+  const avgSPG = (totals.steals || 0) / gamesPlayed;
+  const avgBPG = (totals.blocks || 0) / gamesPlayed;
+  
+  // True Shooting and efficiency metrics
+  const avgTS = totals.trueShootingSeasons ? 
+    totals.trueShootingSeasons.reduce((a,b) => a+b, 0) / totals.trueShootingSeasons.length : 0.55;
+  const avgTOV = (totals.turnovers || 0) / gamesPlayed;
+  
+  // Advanced PER calculation with better methodology
   const avgPER = totals.per && totals.per.length > 0 ? 
     totals.per.reduce((a,b) => a+b, 0) / totals.per.length : 15.0;
   
-  // Accolades multiplier - use correct data structure
+  // Win Shares and advanced metrics
+  const winShares = seasons.reduce((total, season) => {
+    const ws = (season.averages.pts * 0.032) + (season.averages.reb * 0.045) + 
+               (season.averages.ast * 0.054) - (season.averages.tov * 0.040);
+    return total + Math.max(0, ws);
+  }, 0);
+  
+  // Box Plus/Minus approximation
+  const bpm = seasons.reduce((total, season) => {
+    const seasonBPM = ((season.averages.pts - 14.6) * 0.1) + 
+                     ((season.averages.reb - 4.6) * 0.14) + 
+                     ((season.averages.ast - 2.3) * 0.15) + 
+                     ((season.averages.stl - 0.9) * 0.22) + 
+                     ((season.averages.blk - 0.6) * 0.18) - 
+                     ((season.averages.tov - 2.1) * 0.12);
+    return total + seasonBPM;
+  }, 0) / seasons.length;
+  
+  // Peak performance bonus (best 3-5 seasons)
+  const peakSeasons = seasons
+    .map(s => s.averages.per || 15)
+    .sort((a, b) => b - a)
+    .slice(0, Math.min(5, seasons.length));
+  const peakPER = peakSeasons.reduce((a, b) => a + b, 0) / peakSeasons.length;
+  
+  // Calculate base score with enhanced weighting
+  let score = 0;
+  
+  // Primary stats (40% of score)
+  score += avgPPG * 2.5;
+  score += avgRPG * 1.8;
+  score += avgAPG * 2.2;
+  score += avgSPG * 3.0;
+  score += avgBPG * 2.5;
+  
+  // Advanced metrics (30% of score)
+  score += (avgPER - 15) * 4; // PER above average
+  score += (avgTS - 0.55) * 100; // TS% above league average
+  score += Math.max(0, bpm) * 8; // Positive BPM only
+  score += winShares * 1.5;
+  
+  // Peak performance (10% of score)
+  score += (peakPER - 20) * 3; // Peak seasons bonus
+  
+  // Accolades and achievements (20% of score)
   const championships = totals.titles || 0;
   const finalsMVPs = totals.finalsMVPs || 0;
   const allStars = totals.allstars || 0;
   const mvps = totals.mvps || 0;
   const dpoys = totals.dpoys || 0;
+  const scoring = totals.scoring || 0;
   
-  // Calculate base score
-  let score = (avgPPG * 2) + (avgRPG * 1.5) + (avgAPG * 2) + (avgPER * 3);
+  score += championships * 60; // Championships are extremely valuable
+  score += finalsMVPs * 40;
+  score += mvps * 50;
+  score += allStars * 6;
+  score += dpoys * 20;
+  score += scoring * 12; // Scoring titles
   
-  // Add accolade bonuses
-  score += championships * 50;
-  score += finalsMVPs * 30;
-  score += mvps * 40;
-  score += allStars * 5;
-  score += dpoys * 15;
+  // Longevity and consistency bonuses
+  score += seasons.length * 3; // Years played
+  score += Math.min(10, gamesPlayed / 70) * 5; // Durability bonus
   
-  // Longevity bonus
-  score += seasons.length * 2;
+  // Efficiency penalties for poor shooting/turnovers
+  if (avgTS < 0.50) score *= 0.9; // Poor shooting penalty
+  if (avgTOV > avgAPG * 0.4) score *= 0.95; // High turnover penalty
   
   return Math.round(Math.max(0, score));
 };
@@ -68,24 +125,54 @@ const getHallOfFameChance = (game) => {
   const totals = career.totals || {};
   const championships = totals.titles || 0;
   const mvps = totals.mvps || 0;
+  const allStars = totals.allstars || 0;
+  const finalsMVPs = totals.finalsMVPs || 0;
   
-  let chance = Math.min(90, score / 10);
+  // Base chance from overall score
+  let chance = Math.min(95, score / 12);
   
-  // Minimum requirements
-  if (seasons < 3) chance = Math.min(chance, 10);
-  if (championships === 0 && mvps === 0) chance = Math.min(chance, 60);
+  // Minimum requirements and modifiers
+  if (seasons < 5) chance = Math.min(chance, 15); // Very low for short careers
+  if (seasons < 8) chance = Math.min(chance, 35); // Still penalized for shortish careers
+  if (seasons >= 15) chance += 10; // Longevity bonus
   
-  return Math.round(Math.max(0, chance));
+  // Championship and MVP requirements (more stringent)
+  if (championships === 0 && mvps === 0) {
+    chance = Math.min(chance, 45); // Harder without championships or MVPs
+    if (allStars < 5) chance = Math.min(chance, 25); // Much harder without All-Stars
+  }
+  
+  // Elite player bonuses
+  if (championships >= 3) chance += 15;
+  if (mvps >= 2) chance += 20;
+  if (finalsMVPs >= 2) chance += 15;
+  if (allStars >= 10) chance += 10;
+  
+  // Statistical excellence bonuses
+  const avgPPG = (totals.points || 0) / Math.max(totals.games || 1, 1);
+  const avgAPG = (totals.assists || 0) / Math.max(totals.games || 1, 1);
+  const avgRPG = (totals.rebounds || 0) / Math.max(totals.games || 1, 1);
+  
+  if (avgPPG >= 25) chance += 8;
+  if (avgAPG >= 8) chance += 8;
+  if (avgRPG >= 12) chance += 8;
+  
+  return Math.round(Math.max(0, Math.min(100, chance)));
 };
 
 const generateCurrentLeagueRankings = (game) => {
-  // Generate mock current season stats for top players
+  // Generate mock current season stats for top players with more realistic and varied stats
   const mockPlayers = [
-    { name: "Luka Dončić", team: "DAL", ppg: 31.2, rpg: 8.9, apg: 9.1, per: 29.8 },
-    { name: "Jayson Tatum", team: "BOS", ppg: 28.5, rpg: 8.2, apg: 4.8, per: 27.1 },
-    { name: "Nikola Jokić", team: "DEN", ppg: 26.8, rpg: 12.4, apg: 8.9, per: 31.2 },
-    { name: "Giannis Antetokounmpo", team: "MIL", ppg: 29.1, rpg: 11.2, apg: 6.1, per: 30.5 },
-    { name: "Joel Embiid", team: "PHI", ppg: 27.9, rpg: 10.8, apg: 3.2, per: 28.9 }
+    { name: "Luka Dončić", team: "DAL", ppg: 31.2, rpg: 8.9, apg: 9.1, per: 29.8, ts: 0.583 },
+    { name: "Jayson Tatum", team: "BOS", ppg: 28.5, rpg: 8.2, apg: 4.8, per: 27.1, ts: 0.571 },
+    { name: "Nikola Jokić", team: "DEN", ppg: 26.8, rpg: 12.4, apg: 8.9, per: 31.2, ts: 0.632 },
+    { name: "Giannis Antetokounmpo", team: "MIL", ppg: 29.1, rpg: 11.2, apg: 6.1, per: 30.5, ts: 0.598 },
+    { name: "Joel Embiid", team: "PHI", ppg: 27.9, rpg: 10.8, apg: 3.2, per: 28.9, ts: 0.588 },
+    { name: "Shai Gilgeous-Alexander", team: "OKC", ppg: 30.1, rpg: 5.5, apg: 6.2, per: 28.2, ts: 0.618 },
+    { name: "Donovan Mitchell", team: "CLE", ppg: 27.5, rpg: 4.4, apg: 6.0, per: 24.8, ts: 0.572 },
+    { name: "Anthony Davis", team: "LAL", ppg: 24.7, rpg: 12.6, apg: 3.5, per: 27.4, ts: 0.589 },
+    { name: "De'Aaron Fox", team: "SAC", ppg: 26.6, rpg: 4.6, apg: 6.1, per: 25.1, ts: 0.551 },
+    { name: "Paolo Banchero", team: "ORL", ppg: 22.6, rpg: 6.9, apg: 5.4, per: 21.9, ts: 0.544 }
   ];
   
   // Add player's current season stats if available
@@ -99,14 +186,26 @@ const generateCurrentLeagueRankings = (game) => {
       rpg: currentSeason.averages.reb || 0,
       apg: currentSeason.averages.ast || 0,
       per: currentSeason.averages.per || 15.0,
+      ts: currentSeason.averages.ts || 0.55,
       isPlayer: true
     };
     
     mockPlayers.push(playerStats);
   }
   
-  // Sort by PER and assign rankings
-  mockPlayers.sort((a, b) => b.per - a.per);
+  // Calculate a more comprehensive ranking score
+  mockPlayers.forEach(player => {
+    // Advanced ranking formula considering multiple factors
+    player.rankingScore = 
+      (player.ppg * 1.0) + 
+      (player.rpg * 0.8) + 
+      (player.apg * 1.2) + 
+      ((player.per - 15) * 1.5) + 
+      ((player.ts - 0.55) * 50);
+  });
+  
+  // Sort by comprehensive ranking score and assign rankings
+  mockPlayers.sort((a, b) => b.rankingScore - a.rankingScore);
   return mockPlayers.map((player, index) => ({
     ...player,
     rank: index + 1
@@ -114,18 +213,20 @@ const generateCurrentLeagueRankings = (game) => {
 };
 
 const generateAllTimeRankings = (game) => {
-  // All-time greats for comparison
+  // All-time greats for comparison with more balanced scoring
   const allTimeGreats = [
-    { name: "Michael Jordan", score: 850, championships: 6, mvps: 5 },
-    { name: "LeBron James", score: 820, championships: 4, mvps: 4 },
-    { name: "Kareem Abdul-Jabbar", score: 800, championships: 6, mvps: 6 },
-    { name: "Magic Johnson", score: 780, championships: 5, mvps: 3 },
-    { name: "Larry Bird", score: 760, championships: 3, mvps: 3 },
-    { name: "Tim Duncan", score: 740, championships: 5, mvps: 2 },
-    { name: "Shaquille O'Neal", score: 720, championships: 4, mvps: 1 },
-    { name: "Kobe Bryant", score: 710, championships: 5, mvps: 1 },
-    { name: "Hakeem Olajuwon", score: 690, championships: 2, mvps: 1 },
-    { name: "Bill Russell", score: 680, championships: 11, mvps: 5 }
+    { name: "Michael Jordan", score: 950, championships: 6, mvps: 5, avgPPG: 30.1, avgPER: 27.9 },
+    { name: "LeBron James", score: 920, championships: 4, mvps: 4, avgPPG: 27.2, avgPER: 27.5 },
+    { name: "Kareem Abdul-Jabbar", score: 890, championships: 6, mvps: 6, avgPPG: 24.6, avgPER: 25.2 },
+    { name: "Magic Johnson", score: 860, championships: 5, mvps: 3, avgPPG: 19.5, avgPER: 24.1 },
+    { name: "Larry Bird", score: 840, championships: 3, mvps: 3, avgPPG: 24.3, avgPER: 23.5 },
+    { name: "Tim Duncan", score: 820, championships: 5, mvps: 2, avgPPG: 19.0, avgPER: 21.3 },
+    { name: "Shaquille O'Neal", score: 800, championships: 4, mvps: 1, avgPPG: 23.7, avgPER: 26.4 },
+    { name: "Kobe Bryant", score: 780, championships: 5, mvps: 1, avgPPG: 25.0, avgPER: 22.9 },
+    { name: "Hakeem Olajuwon", score: 760, championships: 2, mvps: 1, avgPPG: 21.8, avgPER: 23.6 },
+    { name: "Bill Russell", score: 740, championships: 11, mvps: 5, avgPPG: 15.1, avgPER: 18.9 },
+    { name: "Wilt Chamberlain", score: 720, championships: 2, mvps: 4, avgPPG: 30.1, avgPER: 26.1 },
+    { name: "Stephen Curry", score: 700, championships: 4, mvps: 2, avgPPG: 24.6, avgPER: 23.8 }
   ];
   
   // Add player if they have completed seasons
@@ -133,11 +234,16 @@ const generateAllTimeRankings = (game) => {
   if (seasons.length > 0) {
     const playerScore = calculatePlayerScore(game);
     const totals = game.career?.totals || {};
+    const gamesPlayed = Math.max(totals.games || 1, 1);
+    
     const playerEntry = {
       name: `${game.firstName || 'Player'} ${game.lastName || ''}`,
       score: playerScore,
       championships: totals.titles || 0,
       mvps: totals.mvps || 0,
+      avgPPG: (totals.points || 0) / gamesPlayed,
+      avgPER: totals.per && totals.per.length > 0 ? 
+        totals.per.reduce((a,b) => a+b, 0) / totals.per.length : 15.0,
       isPlayer: true
     };
     
@@ -149,7 +255,7 @@ const generateAllTimeRankings = (game) => {
   return allTimeGreats.map((player, index) => ({
     ...player,
     rank: index + 1
-  })).slice(0, 15); // Top 15
+  })).slice(0, 20); // Top 20
 };
 
 // Calculate age-based performance multiplier
@@ -618,10 +724,35 @@ function playerGameSim(p){
   const usageBase = 0.18 + (p.ratings.overall-60)/100 * 0.25; // Elite players get 30%+ usage
   const usage = clamp(usageBase + (p.ratings.shooting + p.ratings.finishing)/200 * 0.15 + rnd(-0.03, 0.03), 0.15, 0.40);
   
-  // Shot attempts scale better with high ratings
-  const shotsBase = Math.max(6, Math.round(mins * 1.2 * usage)); // Higher base shots
-  const efficiencyBonus = (p.ratings.overall >= 85) ? 1.2 : (p.ratings.overall >= 80) ? 1.1 : 1.0;
-  const shots = Math.round(shotsBase * efficiencyBonus);
+  // Enhanced shot attempts calculation with better efficiency scaling
+  const shotsBase = Math.max(6, Math.round(mins * 1.2 * usage));
+  
+  // More sophisticated efficiency bonus based on multiple factors
+  let efficiencyMultiplier = 1.0;
+  
+  // Overall rating bonus (more gradual scaling)
+  if (p.ratings.overall >= 95) efficiencyMultiplier += 0.25;
+  else if (p.ratings.overall >= 90) efficiencyMultiplier += 0.20;
+  else if (p.ratings.overall >= 85) efficiencyMultiplier += 0.15;
+  else if (p.ratings.overall >= 80) efficiencyMultiplier += 0.10;
+  else if (p.ratings.overall >= 75) efficiencyMultiplier += 0.05;
+  
+  // Shooting and finishing contribute to shot efficiency
+  const shootingEffect = Math.max(0, (p.ratings.shooting - 70) / 100 * 0.15);
+  const finishingEffect = Math.max(0, (p.ratings.finishing - 70) / 100 * 0.15);
+  
+  // Peak performance and health significantly affect efficiency
+  efficiencyMultiplier += (peakFactor - 0.5) * 0.20; // Peak can add up to 10% more shots
+  efficiencyMultiplier += (healthFactor - 0.5) * 0.15; // Health affects shot attempts
+  efficiencyMultiplier += shootingEffect + finishingEffect;
+  
+  // Apply age factor to efficiency (veterans are smarter but less athletic)
+  if (p.age >= 30) {
+    efficiencyMultiplier += Math.min(0.05, (p.age - 30) * 0.01); // Experience bonus
+    efficiencyMultiplier -= Math.max(0, (p.age - 33) * 0.02); // Age decline
+  }
+  
+  const shots = Math.round(shotsBase * Math.max(0.7, efficiencyMultiplier));
   
   // Three-point rate based on shooting rating with better scaling
   const threeRateBase = 0.15 + Math.max(0, (p.ratings.shooting-65)/80 * 0.35);
@@ -686,9 +817,27 @@ function playerGameSim(p){
 
 function calculatePER(pts, reb, ast, stl, blk, fgm, fga, ftm, fta, mins) {
   if (mins === 0) return 0;
-  // Simplified PER calculation
-  const uPER = (1/mins) * (fgm * 85.910 + stl * 53.897 + (3 * ast) * 34.677 + ftm * 46.845 + blk * 39.190 + reb * 39.190 - (fga - fgm) * 39.190 - (fta - ftm) * 20.091);
-  return Math.max(0, uPER);
+  
+  // More accurate PER calculation based on NBA formula
+  // Positive contributions
+  const posContrib = (fgm * 85.910) + (stl * 53.897) + (ast * 34.677) + 
+                    (ftm * 46.845) + (blk * 39.190) + (reb * 39.190);
+  
+  // Negative contributions (missed shots and free throws)
+  const negContrib = ((fga - fgm) * 39.190) + ((fta - ftm) * 20.091);
+  
+  // Turnovers approximation (roughly 15% of possessions for average player)
+  const estimatedTurnovers = (fga + fta * 0.44 + ast) * 0.12;
+  const turnoverPenalty = estimatedTurnovers * 53.897;
+  
+  // Calculate unadjusted PER
+  const uPER = (1/mins) * (posContrib - negContrib - turnoverPenalty);
+  
+  // Pace adjustment (assumed league pace of 100 possessions per 48 minutes)
+  const paceAdjusted = uPER * (48 / 100);
+  
+  // League average is 15.00, ensure we don't go below 0
+  return Math.max(0, Math.min(50, paceAdjusted)); // Cap at 50 for sanity
 }
 
 function calculateTS(pts, fga, fta) {
@@ -953,13 +1102,18 @@ export default function BasketballLife(){
   useEffect(() => {
     if (game?.team && NBA_TEAMS[game.team]) {
       const teamColors = NBA_TEAMS[game.team].colors;
+      const primaryRgb = hexToRgb(teamColors.primary);
+      const secondaryRgb = hexToRgb(teamColors.secondary);
+      
       document.documentElement.style.setProperty('--team-primary', teamColors.primary);
       document.documentElement.style.setProperty('--team-secondary', teamColors.secondary);
       document.documentElement.style.setProperty('--team-text', teamColors.text);
       
+      // Set RGB values for the new background gradients
+      document.documentElement.style.setProperty('--team-primary-rgb', `${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}`);
+      document.documentElement.style.setProperty('--team-secondary-rgb', `${secondaryRgb.r}, ${secondaryRgb.g}, ${secondaryRgb.b}`);
+      
       // Add glassmorphism team colors
-      const primaryRgb = hexToRgb(teamColors.primary);
-      const secondaryRgb = hexToRgb(teamColors.secondary);
       document.documentElement.style.setProperty('--team-glass', `rgba(${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}, 0.1)`);
       document.documentElement.style.setProperty('--team-border', `rgba(${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}, 0.2)`);
     } else {
@@ -967,6 +1121,8 @@ export default function BasketballLife(){
       document.documentElement.style.setProperty('--team-primary', '#3b82f6');
       document.documentElement.style.setProperty('--team-secondary', '#1e40af');
       document.documentElement.style.setProperty('--team-text', '#ffffff');
+      document.documentElement.style.setProperty('--team-primary-rgb', '59, 130, 246');
+      document.documentElement.style.setProperty('--team-secondary-rgb', '30, 64, 175');
       document.documentElement.style.setProperty('--team-glass', 'rgba(59, 130, 246, 0.1)');
       document.documentElement.style.setProperty('--team-border', 'rgba(59, 130, 246, 0.2)');
     }
@@ -1123,18 +1279,42 @@ export default function BasketballLife(){
   function requestTrade(){
     setGame(prev=>{
       const p = deepClone(prev);
-      if(chance(0.6)){ // 60% success rate
+      const teamInfo = NBA_TEAMS[p.team];
+      const isContractYear = p.contract.year >= p.contract.years;
+      
+      // Trade success rate depends on multiple factors
+      let baseSuccessRate = 0.35; // Base 35% chance
+      
+      // Contract year trades are less likely (teams prefer to let player walk)
+      if (isContractYear) baseSuccessRate *= 0.7;
+      
+      // Player performance affects trade likelihood
+      const avg = seasonAverages(p.stats);
+      if (avg.pts > 25 || avg.per > 22) baseSuccessRate += 0.15; // Star players easier to trade
+      if (avg.pts < 10 && avg.per < 15) baseSuccessRate -= 0.15; // Poor performers harder to trade
+      
+      // Team situation affects willingness to trade
+      if (teamInfo && teamInfo.strength > 85) baseSuccessRate -= 0.1; // Good teams less likely to trade stars
+      if (p.morale < 40) baseSuccessRate += 0.1; // Unhappy players more likely to be traded
+      
+      // Salary affects trade difficulty
+      const salaryRatio = (p.contract.salary / p.contract.years) / 30; // Relative to average salary
+      if (salaryRatio > 1.5) baseSuccessRate -= 0.1; // Expensive players harder to trade
+      
+      const finalSuccessRate = Math.max(0.15, Math.min(0.85, baseSuccessRate));
+      
+      if(chance(finalSuccessRate)){
         const oldTeam = p.team;
         p.team = pick(TEAMS.filter(t=>t!==p.team));
         p.arena = genArena(p.team);
         p.teammates = generateTeammates();
-        p.teamChem = irnd(30, 70); // fresh start uncertainty
+        p.teamChem = irnd(25, 65); // Fresh start uncertainty (slightly lower)
         p.teamStrength = irnd(60, 90);
         p.teamStanding = irnd(5, 20);
         p.career.timeline.push(event("Trade", `Successfully traded from ${oldTeam} to ${p.team}.`));
         pushToast("Trade request approved!");
       } else {
-        p.morale = clamp(p.morale - 5, 0, 100);
+        p.morale = clamp(p.morale - 8, 0, 100); // Increased morale penalty
         p.career.timeline.push(event("Trade", "Trade request denied by management."));
         pushToast("Trade request denied");
       }
@@ -1147,27 +1327,82 @@ export default function BasketballLife(){
       const p = deepClone(prev);
       const currentValue = p.contract.salary / p.contract.years;
       const avg = seasonAverages(p.stats);
-      
-      // Performance-based value increase
-      const performanceMultiplier = 1 + (p.ratings.overall - 75) / 100 + avg.pts / 50;
-      const marketMultiplier = 1 + (p.fame / 100) * 0.3;
-      const newValue = Math.round(currentValue * performanceMultiplier * marketMultiplier * (1.1 + rnd(-0.05, 0.15)));
-      
-      // Success rate based on performance and team situation
       const teamInfo = NBA_TEAMS[p.team];
-      const teamNeedsPlayer = teamInfo && teamInfo.strength < 80;
-      const successRate = 0.3 + (avg.pts > 20 ? 0.2 : 0) + (avg.per > 18 ? 0.15 : 0) + (teamNeedsPlayer ? 0.15 : 0);
       
-      if(chance(successRate)){ 
-        const increase = newValue - currentValue;
-        p.contract.salary = Math.round(newValue * (p.contract.years - p.contract.year + 1));
-        p.cash += Math.round(increase * 0.25); // signing bonus based on increase
-        p.career.timeline.push(event("Contract", `Renegotiated contract: +$${increase}k/year (${newValue}k total).`));
-        pushToast(`Contract increased to $${newValue}k/year!`);
+      // Check if this is an extension (before final year) vs. new contract
+      const isExtension = p.contract.year < p.contract.years - 1;
+      const isContractYear = p.contract.year >= p.contract.years;
+      
+      // Performance-based multipliers with better balance
+      let performanceMultiplier = 1.0;
+      performanceMultiplier += Math.max(-0.2, Math.min(0.3, (p.ratings.overall - 78) / 80));
+      performanceMultiplier += Math.max(-0.15, Math.min(0.25, (avg.pts - 18) / 40));
+      performanceMultiplier += Math.max(-0.1, Math.min(0.15, (avg.per - 16) / 20));
+      
+      // Market and team factors
+      const marketMultiplier = 1 + Math.max(0, Math.min(0.25, p.fame / 150));
+      const teamLoyaltyBonus = isExtension ? 1.05 : 1.0; // 5% bonus for extensions
+      
+      // Cap the total increase to prevent unrealistic jumps
+      const maxIncrease = isExtension ? 1.4 : 1.8; // Lower cap for extensions
+      const minDecrease = isContractYear ? 0.7 : 0.85; // Can decrease more if contract expired
+      
+      let newValue = currentValue * performanceMultiplier * marketMultiplier * teamLoyaltyBonus;
+      newValue *= (1 + rnd(-0.1, 0.15)); // Market variation
+      newValue = Math.max(currentValue * minDecrease, Math.min(currentValue * maxIncrease, newValue));
+      newValue = Math.round(newValue);
+      
+      // Success rate calculation with extension preference
+      let baseSuccessRate = 0.25;
+      
+      // Extensions are MUCH more likely to succeed
+      if (isExtension) {
+        baseSuccessRate = 0.65; // 65% base rate for extensions
+        
+        // Additional bonuses for extensions
+        if (avg.pts > 15 && avg.per > 16) baseSuccessRate += 0.15;
+        if (p.ratings.overall >= 80) baseSuccessRate += 0.1;
+        if (teamInfo && teamInfo.strength >= 75) baseSuccessRate += 0.1; // Good teams extend players
+        if (p.morale >= 70) baseSuccessRate += 0.1;
+        
       } else {
-        p.morale = clamp(p.morale - 5, 0, 100);
-        p.career.timeline.push(event("Contract", "Contract renegotiation rejected by management."));
-        pushToast("Contract request denied - improve performance");
+        // New contracts (free agency)
+        baseSuccessRate = 0.35;
+        
+        if (avg.pts > 20) baseSuccessRate += 0.2;
+        if (avg.per > 18) baseSuccessRate += 0.15;
+        if (teamInfo && teamInfo.strength < 75) baseSuccessRate += 0.15; // Struggling teams more willing
+      }
+      
+      // Financial feasibility check
+      const increaseRatio = newValue / currentValue;
+      if (increaseRatio > 1.5) baseSuccessRate -= 0.2; // Big raises are harder
+      if (increaseRatio < 1.1) baseSuccessRate += 0.1; // Modest raises easier
+      
+      const finalSuccessRate = Math.max(0.1, Math.min(0.9, baseSuccessRate));
+      
+      if(chance(finalSuccessRate)){ 
+        const increase = newValue - currentValue;
+        const contractYears = isExtension ? (p.contract.years - p.contract.year + irnd(2, 4)) : irnd(2, 5);
+        
+        p.contract.salary = Math.round(newValue * contractYears);
+        p.contract.years = contractYears;
+        if (isExtension) {
+          p.contract.year = p.contract.year; // Keep current year for extensions
+        } else {
+          p.contract.year = 1; // Reset for new contracts
+        }
+        
+        p.cash += Math.round(Math.abs(increase) * 0.15); // Signing bonus
+        
+        const contractType = isExtension ? "Extension" : "Contract";
+        p.career.timeline.push(event(contractType, `${contractType} signed: $${newValue}k/year for ${contractYears} years (${increase > 0 ? '+' : ''}$${increase}k/year).`));
+        pushToast(`${contractType} signed: $${newValue}k/year!`);
+      } else {
+        p.morale = clamp(p.morale - (isExtension ? 3 : 6), 0, 100); // Less penalty for failed extensions
+        const failureType = isExtension ? "Extension" : "Contract";
+        p.career.timeline.push(event(failureType, `${failureType} negotiation rejected by management.`));
+        pushToast(`${failureType} request denied - ${isExtension ? 'try again later' : 'improve performance'}`);
       }
       return p;
     });
