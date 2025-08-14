@@ -11,6 +11,35 @@ const deepClone = (obj) => JSON.parse(JSON.stringify(obj));
 const fmt = (n, d = 1) => Number(n).toFixed(d);
 const sum = (arr) => arr.reduce((a, b) => a + b, 0);
 
+// Format money in millions instead of thousands
+const formatMoney = (amount) => {
+  if (amount >= 1000000) {
+    return `$${(amount / 1000000).toFixed(1)}B`;
+  } else if (amount >= 1000) {
+    return `$${(amount / 1000).toFixed(1)}M`;
+  } else {
+    return `$${amount}k`;
+  }
+};
+
+// Generate random player appearance
+const generateAppearance = () => {
+  const skinTones = ['#F5DEB3', '#DEB887', '#D2B48C', '#BC9A6A', '#A0522D', '#8B4513', '#654321'];
+  const hairColors = ['#000000', '#2F1B14', '#8B4513', '#D2691E', '#DAA520', '#FFD700', '#B22222', '#FFFFFF'];
+  const eyeColors = ['#8B4513', '#654321', '#4682B4', '#228B22', '#808080', '#000000'];
+  
+  return {
+    skin: pick(skinTones),
+    hair: pick(hairColors),
+    eyes: pick(eyeColors),
+    features: {
+      faceShape: pick(['oval', 'round', 'square', 'heart']),
+      nose: pick(['small', 'medium', 'large']),
+      eyebrows: pick(['thin', 'medium', 'thick'])
+    }
+  };
+};
+
 // Convert hex color to RGB values for glassmorphism effects
 const hexToRgb = (hex) => {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -30,65 +59,68 @@ const calculatePlayerScore = (game) => {
   const seasons = career.seasons;
   const gamesPlayed = Math.max(totals.games || 1, 1);
   
-  // Advanced statistical metrics
+  // Advanced statistical metrics with NaN protection
   const avgPPG = (totals.points || 0) / gamesPlayed;
   const avgRPG = (totals.rebounds || 0) / gamesPlayed;
   const avgAPG = (totals.assists || 0) / gamesPlayed;
   const avgSPG = (totals.steals || 0) / gamesPlayed;
   const avgBPG = (totals.blocks || 0) / gamesPlayed;
   
-  // True Shooting and efficiency metrics
-  const avgTS = totals.trueShootingSeasons ? 
-    totals.trueShootingSeasons.reduce((a,b) => a+b, 0) / totals.trueShootingSeasons.length : 0.55;
+  // True Shooting and efficiency metrics with safe defaults
+  const avgTS = totals.trueShootingSeasons && totals.trueShootingSeasons.length > 0 ? 
+    totals.trueShootingSeasons.reduce((a,b) => a+(b||0.55), 0) / totals.trueShootingSeasons.length : 0.55;
   const avgTOV = (totals.turnovers || 0) / gamesPlayed;
   
-  // Advanced PER calculation with better methodology
+  // Advanced PER calculation with better methodology and NaN protection
   const avgPER = totals.per && totals.per.length > 0 ? 
-    totals.per.reduce((a,b) => a+b, 0) / totals.per.length : 15.0;
+    totals.per.reduce((a,b) => a+(b||15), 0) / totals.per.length : 15.0;
   
-  // Win Shares and advanced metrics
+  // Win Shares and advanced metrics with safe calculations
   const winShares = seasons.reduce((total, season) => {
-    const ws = (season.averages.pts * 0.032) + (season.averages.reb * 0.045) + 
-               (season.averages.ast * 0.054) - (season.averages.tov * 0.040);
-    return total + Math.max(0, ws);
+    const ws = ((season.averages?.pts || 0) * 0.032) + 
+               ((season.averages?.reb || 0) * 0.045) + 
+               ((season.averages?.ast || 0) * 0.054) - 
+               ((season.averages?.tov || 0) * 0.040);
+    return total + Math.max(0, ws || 0);
   }, 0);
   
-  // Box Plus/Minus approximation
-  const bpm = seasons.reduce((total, season) => {
-    const seasonBPM = ((season.averages.pts - 14.6) * 0.1) + 
-                     ((season.averages.reb - 4.6) * 0.14) + 
-                     ((season.averages.ast - 2.3) * 0.15) + 
-                     ((season.averages.stl - 0.9) * 0.22) + 
-                     ((season.averages.blk - 0.6) * 0.18) - 
-                     ((season.averages.tov - 2.1) * 0.12);
-    return total + seasonBPM;
-  }, 0) / seasons.length;
+  // Box Plus/Minus approximation with safe calculations
+  const bpm = seasons.length > 0 ? seasons.reduce((total, season) => {
+    const seasonBPM = (((season.averages?.pts || 0) - 14.6) * 0.1) + 
+                     (((season.averages?.reb || 0) - 4.6) * 0.14) + 
+                     (((season.averages?.ast || 0) - 2.3) * 0.15) + 
+                     (((season.averages?.stl || 0) - 0.9) * 0.22) + 
+                     (((season.averages?.blk || 0) - 0.6) * 0.18) - 
+                     (((season.averages?.tov || 0) - 2.1) * 0.12);
+    return total + (seasonBPM || 0);
+  }, 0) / seasons.length : 0;
   
-  // Peak performance bonus (best 3-5 seasons)
+  // Peak performance bonus (best 3-5 seasons) with safe calculations
   const peakSeasons = seasons
-    .map(s => s.averages.per || 15)
-    .sort((a, b) => b - a)
+    .map(s => s.averages?.per || 15)
+    .sort((a, b) => (b||0) - (a||0))
     .slice(0, Math.min(5, seasons.length));
-  const peakPER = peakSeasons.reduce((a, b) => a + b, 0) / peakSeasons.length;
+  const peakPER = peakSeasons.length > 0 ? 
+    peakSeasons.reduce((a, b) => a + (b||15), 0) / peakSeasons.length : 15;
   
-  // Calculate base score with enhanced weighting
+  // Calculate base score with enhanced weighting and NaN protection
   let score = 0;
   
   // Primary stats (40% of score)
-  score += avgPPG * 2.5;
-  score += avgRPG * 1.8;
-  score += avgAPG * 2.2;
-  score += avgSPG * 3.0;
-  score += avgBPG * 2.5;
+  score += (avgPPG || 0) * 2.5;
+  score += (avgRPG || 0) * 1.8;
+  score += (avgAPG || 0) * 2.2;
+  score += (avgSPG || 0) * 3.0;
+  score += (avgBPG || 0) * 2.5;
   
   // Advanced metrics (30% of score)
-  score += (avgPER - 15) * 4; // PER above average
-  score += (avgTS - 0.55) * 100; // TS% above league average
-  score += Math.max(0, bpm) * 8; // Positive BPM only
-  score += winShares * 1.5;
+  score += ((avgPER || 15) - 15) * 4; // PER above average
+  score += ((avgTS || 0.55) - 0.55) * 100; // TS% above league average
+  score += Math.max(0, bpm || 0) * 8; // Positive BPM only
+  score += (winShares || 0) * 1.5;
   
   // Peak performance (10% of score)
-  score += (peakPER - 20) * 3; // Peak seasons bonus
+  score += ((peakPER || 15) - 20) * 3; // Peak seasons bonus
   
   // Accolades and achievements (20% of score)
   const championships = totals.titles || 0;
@@ -109,11 +141,13 @@ const calculatePlayerScore = (game) => {
   score += seasons.length * 3; // Years played
   score += Math.min(10, gamesPlayed / 70) * 5; // Durability bonus
   
-  // Efficiency penalties for poor shooting/turnovers
-  if (avgTS < 0.50) score *= 0.9; // Poor shooting penalty
-  if (avgTOV > avgAPG * 0.4) score *= 0.95; // High turnover penalty
+  // Efficiency penalties for poor shooting/turnovers with safe checks
+  if ((avgTS || 0.55) < 0.50) score *= 0.9; // Poor shooting penalty
+  if ((avgTOV || 0) > (avgAPG || 0) * 0.4) score *= 0.95; // High turnover penalty
   
-  return Math.round(Math.max(0, score));
+  // Ensure no NaN values in final score
+  const finalScore = isNaN(score) ? 0 : score;
+  return Math.round(Math.max(0, finalScore));
 };
 
 const getHallOfFameChance = (game) => {
@@ -713,80 +747,109 @@ function cryptoRandomId(){
 
 // ---------- Simulation ----------
 function playerGameSim(p){
-  // Base minutes depend on peak/health and team strength
+  // Base minutes depend on peak/health and team strength - much more realistic
   const peakFactor = p.peak / 100;
   const healthFactor = p.health / 100;
   const ageMultiplier = getAgeMultiplier(p.age);
   
-  const mins = clamp(24 + irnd(-6, 8) + Math.round((p.ratings.overall-70)/3) + Math.round(peakFactor * 8) - Math.round((100-p.health)/10), 8, 44);
+  // High-rated players get more consistency in minutes and performance
+  const consistencyFactor = p.ratings.overall >= 90 ? 1.2 : 
+                           p.ratings.overall >= 85 ? 1.1 : 
+                           p.ratings.overall >= 80 ? 1.05 : 1.0;
   
-  // Improved usage calculation - elite players get much higher usage
-  const usageBase = 0.18 + (p.ratings.overall-60)/100 * 0.25; // Elite players get 30%+ usage
-  const usage = clamp(usageBase + (p.ratings.shooting + p.ratings.finishing)/200 * 0.15 + rnd(-0.03, 0.03), 0.15, 0.40);
+  // More realistic minutes calculation with better consistency for stars
+  const minsVariance = p.ratings.overall >= 85 ? 6 : 8; // Less variance for better players
+  const mins = clamp(18 + irnd(-3, minsVariance) + Math.round((p.ratings.overall-70)/5) + Math.round(peakFactor * 6) - Math.round((100-p.health)/15), 8, 40);
   
-  // Enhanced shot attempts calculation with better efficiency scaling
-  const shotsBase = Math.max(6, Math.round(mins * 1.2 * usage));
+  // More conservative usage calculation with star bonus
+  const usageBase = 0.16 + (p.ratings.overall-60)/100 * 0.18; // Max ~34% usage for 100 OVR
+  const starUsageBonus = p.ratings.overall >= 90 ? 0.02 : p.ratings.overall >= 85 ? 0.01 : 0;
+  const usage = clamp(usageBase + starUsageBonus + (p.ratings.shooting + p.ratings.finishing)/300 * 0.08 + rnd(-0.02, 0.02), 0.12, 0.35);
   
-  // More sophisticated efficiency bonus based on multiple factors
-  let efficiencyMultiplier = 1.0;
+  // Shot attempts with consistency for high-rated players
+  const shotsBase = Math.max(3, Math.round(mins * 0.7 * usage));
   
-  // Overall rating bonus (more gradual scaling)
-  if (p.ratings.overall >= 95) efficiencyMultiplier += 0.25;
-  else if (p.ratings.overall >= 90) efficiencyMultiplier += 0.20;
-  else if (p.ratings.overall >= 85) efficiencyMultiplier += 0.15;
-  else if (p.ratings.overall >= 80) efficiencyMultiplier += 0.10;
-  else if (p.ratings.overall >= 75) efficiencyMultiplier += 0.05;
+  // Enhanced efficiency scaling for high-rated players
+  let efficiencyMultiplier = 0.8; // Start lower
   
-  // Shooting and finishing contribute to shot efficiency
-  const shootingEffect = Math.max(0, (p.ratings.shooting - 70) / 100 * 0.15);
-  const finishingEffect = Math.max(0, (p.ratings.finishing - 70) / 100 * 0.15);
-  
-  // Peak performance and health significantly affect efficiency
-  efficiencyMultiplier += (peakFactor - 0.5) * 0.20; // Peak can add up to 10% more shots
-  efficiencyMultiplier += (healthFactor - 0.5) * 0.15; // Health affects shot attempts
-  efficiencyMultiplier += shootingEffect + finishingEffect;
-  
-  // Apply age factor to efficiency (veterans are smarter but less athletic)
-  if (p.age >= 30) {
-    efficiencyMultiplier += Math.min(0.05, (p.age - 30) * 0.01); // Experience bonus
-    efficiencyMultiplier -= Math.max(0, (p.age - 33) * 0.02); // Age decline
+  // Better scaling for high overall ratings with consistency
+  if (p.ratings.overall >= 95) {
+    efficiencyMultiplier += 0.18; // Elite players get better consistency
+  } else if (p.ratings.overall >= 90) {
+    efficiencyMultiplier += 0.15; // Stars get good consistency  
+  } else if (p.ratings.overall >= 85) {
+    efficiencyMultiplier += 0.12; // Above average players
+  } else if (p.ratings.overall >= 80) {
+    efficiencyMultiplier += 0.08; // Good players
+  } else if (p.ratings.overall >= 75) {
+    efficiencyMultiplier += 0.04; // Average players
   }
   
-  const shots = Math.round(shotsBase * Math.max(0.7, efficiencyMultiplier));
+  // Enhanced skill effects for high-rated players
+  const shootingEffect = Math.max(0, (p.ratings.shooting - 75) / 100 * 0.1);
+  const finishingEffect = Math.max(0, (p.ratings.finishing - 75) / 100 * 0.1);
   
-  // Three-point rate based on shooting rating with better scaling
-  const threeRateBase = 0.15 + Math.max(0, (p.ratings.shooting-65)/80 * 0.35);
-  const threeRate = clamp(threeRateBase + rnd(-0.05, 0.05), 0.10, 0.50);
+  // Condition impact with star player resilience
+  const conditionPenalty = p.ratings.overall >= 85 ? 0.8 : 1.0; // Stars handle fatigue better
+  efficiencyMultiplier += (peakFactor - 0.5) * 0.12 * conditionPenalty;
+  efficiencyMultiplier += (healthFactor - 0.5) * 0.10 * conditionPenalty;
+  efficiencyMultiplier += shootingEffect + finishingEffect;
+  
+  // Age effects with star longevity
+  if (p.age >= 30) {
+    const experienceBonus = p.ratings.overall >= 85 ? 0.04 : 0.03; // Stars get more from experience
+    efficiencyMultiplier += Math.min(experienceBonus, (p.age - 30) * 0.007);
+    const agePenalty = p.ratings.overall >= 90 ? 0.01 : 0.015; // Stars age better
+    efficiencyMultiplier -= Math.max(0, (p.age - 33) * agePenalty);
+  }
+  
+  // Apply consistency factor to reduce variance for stars
+  const shots = Math.round(shotsBase * Math.max(0.6, efficiencyMultiplier * consistencyFactor));
+  
+  // Three-point rates with star player intelligence
+  const threeRateBase = 0.25 + Math.max(0, (p.ratings.shooting-70)/100 * 0.20);
+  const smartShooting = p.ratings.overall >= 85 ? 0.02 : 0; // Stars take better shots
+  const threeRate = clamp(threeRateBase + smartShooting + rnd(-0.04, 0.04), 0.15, 0.45);
   const threes = Math.round(shots * threeRate);
   const twos = Math.max(0, shots - threes);
 
-  // Improved shooting percentages - elite shooters should be much better
-  const shootingBonus = p.ratings.shooting >= 90 ? 0.08 : p.ratings.shooting >= 85 ? 0.05 : p.ratings.shooting >= 80 ? 0.03 : 0;
-  const finishingBonus = p.ratings.finishing >= 90 ? 0.06 : p.ratings.finishing >= 85 ? 0.04 : p.ratings.finishing >= 80 ? 0.02 : 0;
+  // Enhanced shooting percentages with better consistency for high-rated players
+  const shootingBonus = p.ratings.shooting >= 95 ? 0.05 : 
+                       p.ratings.shooting >= 90 ? 0.04 : 
+                       p.ratings.shooting >= 85 ? 0.03 : 
+                       p.ratings.shooting >= 80 ? 0.02 : 0;
+  const finishingBonus = p.ratings.finishing >= 95 ? 0.04 : 
+                        p.ratings.finishing >= 90 ? 0.03 : 
+                        p.ratings.finishing >= 85 ? 0.02 : 
+                        p.ratings.finishing >= 80 ? 0.01 : 0;
   
-  const fg2Pct = clamp(0.42 + (p.ratings.finishing-60)/80 * 0.28 + finishingBonus + (healthFactor-0.5)*0.08 + rnd(-0.06,0.06), 0.35, 0.75);
-  const fg3Pct = clamp(0.32 + (p.ratings.shooting-60)/80 * 0.28 + shootingBonus + (peakFactor-0.5)*0.06 + rnd(-0.07,0.07), 0.25, 0.60);
-  const ftPct  = clamp(0.70 + (p.ratings.shooting-60)/80 * 0.25 + shootingBonus*0.5 + rnd(-0.04,0.04), 0.60, 0.95);
+  // Reduced variance for high-rated players
+  const variance = p.ratings.overall >= 85 ? 0.03 : 0.05;
+  
+  // Better shooting percentage ranges with consistency
+  const fg2Pct = clamp(0.45 + (p.ratings.finishing-70)/100 * 0.18 + finishingBonus + (healthFactor-0.5)*0.04 + rnd(-variance, variance), 0.38, 0.65);
+  const fg3Pct = clamp(0.33 + (p.ratings.shooting-70)/100 * 0.15 + shootingBonus + (peakFactor-0.5)*0.03 + rnd(-variance, variance), 0.28, 0.50);
+  const ftPct  = clamp(0.72 + (p.ratings.shooting-70)/100 * 0.18 + shootingBonus*0.5 + rnd(-0.02, 0.02), 0.65, 0.92);
 
   const made2 = binomial(twos, fg2Pct);
   const made3 = binomial(threes, fg3Pct);
-  const and1  = binomial(made2 + made3, 0.08);
-  const fts   = and1 * 1 + irnd(0,4);
+  const and1  = binomial(made2 + made3, 0.06);
+  const fts   = and1 * 1 + irnd(0,3);
   const ftm   = binomial(fts, ftPct);
 
-  // Better scaling for other stats based on ratings
-  const playmakingFactor = 0.25 + (p.ratings.playmaking >= 85 ? 0.15 : p.ratings.playmaking >= 75 ? 0.10 : 0);
-  const reboundingFactor = 0.30 + (p.ratings.rebounding >= 85 ? 0.20 : p.ratings.rebounding >= 75 ? 0.12 : 0);
-  const defenseFactor = 0.06 + (p.ratings.defense >= 85 ? 0.04 : p.ratings.defense >= 75 ? 0.02 : 0);
+  // Enhanced statistical consistency for high-rated players
+  const playmakingFactor = 0.12 + (p.ratings.playmaking >= 90 ? 0.1 : p.ratings.playmaking >= 80 ? 0.07 : p.ratings.playmaking >= 70 ? 0.04 : 0);
+  const reboundingFactor = 0.18 + (p.ratings.rebounding >= 90 ? 0.14 : p.ratings.rebounding >= 80 ? 0.10 : p.ratings.rebounding >= 70 ? 0.06 : 0);
+  const defenseFactor = 0.03 + (p.ratings.defense >= 90 ? 0.025 : p.ratings.defense >= 80 ? 0.02 : p.ratings.defense >= 70 ? 0.015 : 0);
 
-  // Apply age multiplier to counting stats with better base calculations
+  // Apply age multiplier and consistency to counting stats
   const baseAst = poisson(mins * (p.ratings.playmaking/100) * playmakingFactor);
   const baseReb = poisson(mins * (p.ratings.rebounding/100) * reboundingFactor);
   const baseStl = poisson(mins * (p.ratings.defense/100) * defenseFactor);
   const baseBlk = poisson(mins * (p.ratings.defense/100) * (defenseFactor * 0.8));
 
-  const ast = Math.round(baseAst * ageMultiplier);
-  const reb = Math.round(baseReb * ageMultiplier);
+  const ast = Math.round(baseAst * ageMultiplier * consistencyFactor);
+  const reb = Math.round(baseReb * ageMultiplier * consistencyFactor);
   const stl = Math.round(baseStl * ageMultiplier);
   const blk = Math.round(baseBlk * ageMultiplier);
   const pts = Math.round((made2*2 + made3*3 + ftm) * ageMultiplier);
@@ -811,7 +874,8 @@ function playerGameSim(p){
     per: per,
     ts: ts,
     usage: usage,
-    ageMultiplier: ageMultiplier, // Include for debugging/display
+    ageMultiplier: ageMultiplier,
+    consistencyFactor: consistencyFactor, // Include for transparency
   };
 }
 
@@ -1065,6 +1129,29 @@ const LIFE_EVENTS = [
   (p)=>({ text: "Invited to exclusive basketball camp.", dunking: +1, leadership: +1 }),
   (p)=>({ text: "Food poisoning from team dinner.", health:-10, peak:-15 }),
   (p)=>({ text: "Win slam dunk contest at local event.", fame:+4, followers: +6000, dunking: +2 }),
+  
+  // New social media and challenge events
+  (p)=>({ text: "Your workout video goes viral on social media.", fame:+6, followers: +15000, peak: +3 }),
+  (p)=>({ text: "Challenged by fan to 3-point contest - you win!", fame:+3, followers: +4000, shooting: +0.5 }),
+  (p)=>({ text: "Your motivational post gets 1M likes.", fame:+4, followers: +10000, morale: +5 }),
+  (p)=>({ text: "Trash talk from rival player motivates you.", morale:+8, peak: +5 }),
+  (p)=>({ text: "You start a podcast about basketball.", fame:+7, followers: +8000, cash: +15 }),
+  (p)=>({ text: "Bet with teammate on free throw shooting - you lose.", morale:-2, cash: -5 }),
+  (p)=>({ text: "Late night gaming session affects your energy.", peak:-8, morale:+2 }),
+  (p)=>({ text: "You mentor a young player from your hometown.", morale:+6, leadership: +1, fame: +2 }),
+  (p)=>({ text: "Equipment malfunction during practice.", peak:-3, morale:-2 }),
+  (p)=>({ text: "Your signature move gets its own nickname.", fame:+5, followers: +7000, morale: +4 }),
+];
+
+const SOCIAL_MEDIA_POSTS = [
+  { text: "💪 Grinding in the gym! #NoOffSeason", followers: +2000, fame: +1 },
+  { text: "Blessed to play the game I love every day 🙏", followers: +1500, morale: +2 },
+  { text: "Shoutout to my teammates - we're building something special! 🔥", followers: +3000, teamChem: +2 },
+  { text: "Just dropped 30! But the W is all that matters 💯", followers: +4000, fame: +2 },
+  { text: "Tough loss tonight but we'll be back stronger 💪", followers: +1000, morale: +1 },
+  { text: "Can't wait to see our fans at the next home game! 🏟️", followers: +2500, fame: +1 },
+  { text: "New shoes just dropped! Link in bio 👟", followers: +5000, cash: +10 },
+  { text: "Studying film late into the night 📹 #Preparation", followers: +1800, playmaking: +0.3 },
 ];
 
 function applyDelta(p, delta){
@@ -1091,7 +1178,6 @@ export default function BasketballLife(){
   const [game, setGame] = useState(()=> loadGame() || newPlayer());
   const [tab, setTab] = useState("Home");
   const [toast, setToast] = useState(null);
-  const [championshipToast, setChampionshipToast] = useState(null);
   const [awardsPopup, setAwardsPopup] = useState(null);
   const [showImport, setShowImport] = useState(false);
   const importRef = useRef();
@@ -1132,11 +1218,6 @@ export default function BasketballLife(){
 
   function pushToast(t){ setToast({ id: cryptoRandomId(), text: t}); setTimeout(()=>setToast(null), 2200); }
   
-  function pushChampionshipToast(title, count, finalsMVP = false) {
-    setChampionshipToast({ title, count, finalsMVP });
-    setTimeout(() => setChampionshipToast(null), 5000);
-  }
-
   function showAwardsPopup(awards, seasonNumber, isChampion, isFinalsMVP) {
     setAwardsPopup({ 
       awards, 
@@ -1151,14 +1232,15 @@ export default function BasketballLife(){
       const p = deepClone(prev);
       if(p.phase==="Offseason" || p.phase==="Preseason" || p.phase==="Regular"){
         // Auto-rest if peak is too low
-        if(p.peak < 30 && type !== "Recovery") {
-          p.peak = clamp(p.peak + 20, 0, 100);
-          p.morale = clamp(p.morale + 3, 0, 100);
+        if(p.peak < 25 && type !== "Recovery") {
+          p.peak = clamp(p.peak + 15, 0, 100);
+          p.morale = clamp(p.morale + 2, 0, 100);
           p.career.timeline.push(event("Training", "Auto-rest applied before training."));
         }
         
-        const costPeak = type==="Recovery"? (15 * intensity) : -(8 * intensity);
-        const moraleBase = type==="Recovery"? 2 : 1;
+        // Balanced peak cost for training
+        const costPeak = type==="Recovery"? (8 * intensity) : -(8 * intensity);
+        const moraleBase = type==="Recovery"? 2 : (chance(0.8) ? 1 : -1); // Training more likely to help morale
         const moraleDelta = moraleBase * intensity;
         p.peak = clamp(p.peak + costPeak, 0, 100);
         p.morale = clamp(p.morale + moraleDelta, 0, 100);
@@ -1177,9 +1259,40 @@ export default function BasketballLife(){
           Recovery: [],
         };
         
-        const boost = Math.round((0.3 + rnd(0, 0.4)) * intensity);
-        trainMap[type].forEach(k=>{ 
-          p.ratings[k] = clamp(Math.round(p.ratings[k] + boost), 40, 99);
+        // More balanced training gains that still reward existing skills
+        let baseBoost = 0.15 + rnd(0, 0.25); // 0.15-0.4 base
+        
+        // Age penalty for training - older players improve slower but not too much
+        if (p.age >= 25) baseBoost *= 0.95;
+        if (p.age >= 28) baseBoost *= 0.9;
+        if (p.age >= 30) baseBoost *= 0.85;
+        if (p.age >= 33) baseBoost *= 0.8;
+        
+        // More balanced skill level scaling - high-rated players still improve but slower
+        trainMap[type].forEach(skill => {
+          let skillBoost = baseBoost * intensity;
+          const currentRating = p.ratings[skill];
+          
+          // Better diminishing returns curve
+          if (currentRating >= 95) skillBoost *= 0.4; // Very hard to improve elite skills
+          else if (currentRating >= 90) skillBoost *= 0.5; // Hard but still possible
+          else if (currentRating >= 85) skillBoost *= 0.65; // Moderate difficulty
+          else if (currentRating >= 80) skillBoost *= 0.75; // Easier
+          else if (currentRating >= 75) skillBoost *= 0.85; // Much easier
+          else if (currentRating >= 70) skillBoost *= 0.9; // Even easier
+          // Below 70 gets full boost - easier to improve weak skills
+          
+          // High-rated players (80+) get consistency bonus in game performance
+          // but training is still challenging
+          
+          // Training effectiveness based on peak condition
+          skillBoost *= (p.peak / 100);
+          
+          // Random success/failure with better odds
+          if (chance(0.2)) skillBoost *= 1.8; // Great session (increased chance)
+          else if (chance(0.1)) skillBoost *= 0.6; // Poor session (decreased chance)
+          
+          p.ratings[skill] = clamp(Math.round(p.ratings[skill] + skillBoost), 40, 99);
         });
         
         // Recalculate overall
@@ -1227,7 +1340,27 @@ export default function BasketballLife(){
       const offers = ENDORSEMENTS.filter(e=>p.ratings.overall>=e.minOverall && !p.endorsements.find(x=>x.name===e.name));
       if(!offers.length){ pushToast("No new offers right now"); return p; }
       const offer = pick(offers);
-      const value = Math.round(offer.base * (1 + p.fame/100 + p.followers/100000 + rnd(-0.1, 0.25)));
+      
+      // Enhanced endorsement value calculation
+      let multiplier = 1.0;
+      
+      // Star power multiplier (much more significant)
+      if (p.ratings.overall >= 95) multiplier += 4.0; // Superstar
+      else if (p.ratings.overall >= 90) multiplier += 2.5; // Elite
+      else if (p.ratings.overall >= 85) multiplier += 1.5; // All-Star
+      else if (p.ratings.overall >= 80) multiplier += 0.8; // Starter
+      
+      // Popularity and following impact
+      multiplier += p.fame/50; // Fame has bigger impact
+      multiplier += p.followers/500000; // Followers scale better (LeBron-level = 100M+ followers)
+      
+      // Championship and award bonuses
+      const totals = p.career?.totals || {};
+      multiplier += (totals.titles || 0) * 0.5; // Championships boost value
+      multiplier += (totals.mvps || 0) * 0.8; // MVPs boost value significantly
+      multiplier += (totals.allstars || 0) * 0.1; // All-Stars add value
+      
+      const value = Math.round(offer.base * multiplier * (1 + rnd(-0.1, 0.25)));
       p.cash += value;
       p.endorsements.push({ name: offer.name, value });
       p.career.timeline.push(event("Endorsement", `Signed with ${offer.name} for $${value}k`));
@@ -1241,7 +1374,27 @@ export default function BasketballLife(){
       const offers = SHOE_BRANDS.filter(b=>p.ratings.overall>=b.minOverall && p.followers>=b.minFollowers && !p.shoeDeals.find(x=>x.name===b.name));
       if(!offers.length){ pushToast("No shoe deals available"); return p; }
       const offer = pick(offers);
-      const value = Math.round(offer.base * (1 + p.fame/100 + p.followers/200000 + rnd(-0.1, 0.3)));
+      
+      // Enhanced shoe deal value calculation  
+      let multiplier = 1.0;
+      
+      // Star power has massive impact on shoe deals
+      if (p.ratings.overall >= 95) multiplier += 6.0; // Superstar signature shoe
+      else if (p.ratings.overall >= 90) multiplier += 3.5; // Elite signature shoe
+      else if (p.ratings.overall >= 85) multiplier += 2.0; // All-Star signature
+      else if (p.ratings.overall >= 80) multiplier += 1.0; // Pro model
+      
+      // Global popularity (follower count is crucial for shoe deals)
+      multiplier += p.fame/40;
+      multiplier += p.followers/400000; // Better scaling for massive followings
+      
+      // Performance bonuses
+      const totals = p.career?.totals || {};
+      multiplier += (totals.titles || 0) * 0.8;
+      multiplier += (totals.mvps || 0) * 1.2;
+      multiplier += (totals.scoring || 0) * 0.3; // Scoring titles help shoe sales
+      
+      const value = Math.round(offer.base * multiplier * (1 + rnd(-0.1, 0.3)));
       p.cash += value;
       p.shoeDeals.push({ name: offer.name, value, years: irnd(2,5) });
       p.career.timeline.push(event("Shoe Deal", `Signed with ${offer.name} for $${value}k`));
@@ -1483,12 +1636,6 @@ export default function BasketballLife(){
         p.stats.champion = true; 
         if(res.finalsMVP) p.stats.finalsMVP = true; 
         p.career.timeline.push(event("Championship", res.finalsMVP? "You win the title and Finals MVP!":"You are an NBA champion!")); 
-        
-        // Trigger championship notification after state update
-        setTimeout(() => {
-          const titleCount = (game.career?.totals?.titles || 0) + 1;
-          pushChampionshipToast("NBA CHAMPION!", titleCount, res.finalsMVP);
-        }, 100);
       }
       p.phase = "Offseason"; 
       p.week = 1;
@@ -1511,6 +1658,27 @@ export default function BasketballLife(){
     if(chance(0.25)) randomLifeEventSilent(p);
     
     return p;
+  }
+
+  function postSocialMedia(){
+    setGame(prev=>{
+      const p = deepClone(prev);
+      const post = pick(SOCIAL_MEDIA_POSTS);
+      
+      // Apply effects based on current fame and followers
+      const fameMultiplier = 1 + (p.fame / 200); // More famous = bigger impact
+      const followersGain = Math.round((post.followers || 0) * fameMultiplier);
+      
+      applyDelta(p, { 
+        ...post, 
+        followers: followersGain,
+        text: undefined // Remove text from delta application
+      });
+      
+      p.career.timeline.push(event("Social Media", `Posted: "${post.text}"`));
+      pushToast("Social media post published!");
+      return p;
+    });
   }
 
   function randomLifeEvent(){
@@ -1583,12 +1751,6 @@ export default function BasketballLife(){
           p.stats.champion = true; 
           if(res.finalsMVP) p.stats.finalsMVP = true; 
           p.career.timeline.push(event("Championship", res.finalsMVP? "You win the title and Finals MVP!":"You are an NBA champion!")); 
-          
-          // Trigger championship notification after state update
-          setTimeout(() => {
-            const titleCount = (p.career?.totals?.titles || 0) + 1;
-            pushChampionshipToast("NBA CHAMPION!", titleCount, res.finalsMVP);
-          }, 100);
         }
         p.phase = "Offseason"; 
         p.week = 1;
@@ -1618,39 +1780,107 @@ export default function BasketballLife(){
   }
 
   function simulateGames(p, count){
+    let actualGamesPlayed = 0;
+    
     for(let g=0; g<count; g++){
+      // Determine if player will miss this game
+      let missGame = false;
+      let missReason = "";
+      
+      // Load management for stars (especially veterans)
+      if (p.ratings.overall >= 85 && p.age >= 30 && chance(0.08)) {
+        missGame = true;
+        missReason = "Load Management";
+      }
+      
+      // Injury-based rest (more likely with low health)
+      if (p.health < 40 && chance(0.25)) {
+        missGame = true;
+        missReason = "Injury Recovery";
+      } else if (p.health < 60 && chance(0.12)) {
+        missGame = true;
+        missReason = "Minor Injury";
+      } else if (p.health < 80 && chance(0.06)) {
+        missGame = true;
+        missReason = "Precautionary Rest";
+      }
+      
+      // Peak performance related rest
+      if (p.peak < 30 && chance(0.15)) {
+        missGame = true;
+        missReason = "Fatigue Management";
+      }
+      
+      // Random injuries during games
+      if (!missGame && chance(0.03 + (100-p.health)/800 + (p.age-25)/300)) {
+        const injuryType = pick(["ankle sprain", "knee soreness", "back stiffness", "shoulder strain", "hamstring tightness"]);
+        const severity = chance(0.1) ? "major" : "minor";
+        const healthLoss = severity === "major" ? irnd(15, 30) : irnd(5, 15);
+        const gamesOut = severity === "major" ? irnd(3, 12) : irnd(1, 4);
+        
+        p.health = clamp(p.health - healthLoss, 0, 100);
+        p.career.timeline.push(event("Injury", `${severity} ${injuryType} (-${healthLoss} health, ${gamesOut} games out).`));
+        
+        // Skip games based on injury severity
+        g += gamesOut - 1; // Skip additional games
+        continue;
+      }
+      
+      if (missGame) {
+        p.career.timeline.push(event("Rest", `Missed game due to ${missReason}.`));
+        continue;
+      }
+      
+      // Play the game
       const perf = playerGameSim(p);
       const win = chance(teamWinChance(p, p));
-      // update season stats
+      
+      // Update season stats
       Object.keys(perf).forEach(k=> {
         if(typeof perf[k] === 'number' && k !== 'ageMultiplier') {
           p.stats[k] = (p.stats[k] || 0) + perf[k];
         }
       });
-      p.stats.games += 1; 
+      
+      p.stats.games += 1;
+      actualGamesPlayed += 1;
+      
       if(win) p.stats.wins++; else p.stats.losses++;
       
-      // Update followers based on performance
-      const followerGain = Math.round(perf.points * 100 + perf.assists * 80 + perf.rebounds * 60 + (win ? 500 : -200));
+      // Enhanced follower calculation based on performance and stardom
+      let followerGain = Math.round(perf.points * 150 + perf.assists * 120 + perf.rebounds * 80 + (win ? 800 : -300));
+      
+      // Star player bonuses (top players get massive following boosts)
+      if (p.ratings.overall >= 95) followerGain *= 3.5; // Superstar level
+      else if (p.ratings.overall >= 90) followerGain *= 2.8; // Elite level  
+      else if (p.ratings.overall >= 85) followerGain *= 2.2; // All-Star level
+      else if (p.ratings.overall >= 80) followerGain *= 1.6; // Starter level
+      
+      // Performance bonuses
+      if (perf.points >= 40) followerGain *= 2.0; // Explosive scoring
+      if (perf.points >= 30) followerGain *= 1.5; // Great scoring night
+      if (perf.assists >= 15) followerGain *= 1.8; // Elite playmaking
+      if (perf.rebounds >= 20) followerGain *= 1.6; // Dominant rebounding
+      
       p.followers = Math.max(0, p.followers + followerGain);
       
-      // peak & morale - minimal peak loss during games unless injured
-      p.peak = clamp(p.peak - (perf.injured ? 3 : 0), 0, 100); // Only lose peak if injured
+      // Peak & morale management
+      p.peak = clamp(p.peak - 1, 0, 100); // Natural peak decline from playing
       p.morale = clamp(p.morale + (win? +2 : -2) + (perf.points>=25? +1:0) + (perf.points<8? -1:0), 0, 100);
       
-      // record log
+      // Record game log
       p.stats.gameLogs.unshift({
         id: cryptoRandomId(),
         gameNo: p.stats.games,
         win, ...perf
       });
-      
-      // injuries chance
-      if(chance(0.05 + (100-p.health)/500 + (100-p.peak)/600)){
-        const dmg = irnd(2, 10); 
-        p.health = clamp(p.health - dmg, 0, 100);
-        p.career.timeline.push(event("Injury",`You got banged up (-${dmg} health).`));
-      }
+    }
+    
+    // Add realistic games played variance (even healthy players miss some games)
+    const targetGames = Math.min(82, count);
+    if (actualGamesPlayed === 0 && targetGames > 0) {
+      // Ensure at least some games are played unless severely injured
+      actualGamesPlayed = Math.max(1, Math.round(targetGames * 0.1));
     }
   }
 
@@ -1867,7 +2097,7 @@ export default function BasketballLife(){
       <Tabs current={tab} onSelect={setTab} tabs={["Home","Training","Health","Team","Contracts","Awards","History","Analytics","League"]} />
 
       {tab==="Home" && (
-        <HomePanel game={game} avg={avg} onWeek={playNextWeek} onEvent={randomLifeEvent} onSimMonth={simMonth} onSimSeason={simSeason} />
+        <HomePanel game={game} avg={avg} onWeek={playNextWeek} onEvent={randomLifeEvent} onSocialMedia={postSocialMedia} onSimMonth={simMonth} onSimSeason={simSeason} />
       )}
 
         {tab==="Training" && (
@@ -1922,15 +2152,6 @@ export default function BasketballLife(){
               </div>
             </div>
           </div>
-        )}
-
-        {championshipToast && (
-          <ChampionshipToast 
-            title={championshipToast.title}
-            titleCount={championshipToast.count}
-            isFinalsMVP={championshipToast.finalsMVP}
-            onClose={() => setChampionshipToast(null)}
-          />
         )}
 
         {awardsPopup && (
@@ -2008,7 +2229,7 @@ function StatPill({ label, value, sub }){
   );
 }
 
-function HomePanel({ game, avg, onWeek, onEvent, onSimMonth, onSimSeason }){
+function HomePanel({ game, avg, onWeek, onEvent, onSocialMedia, onSimMonth, onSimSeason }){
   const teamInfo = NBA_TEAMS[game.team];
   
   // Get current team standing from persistent standings
@@ -2085,6 +2306,8 @@ function HomePanel({ game, avg, onWeek, onEvent, onSimMonth, onSimSeason }){
           <div className="grid-2" style={{gap: '8px'}}>
             <button className="btn btn-primary" onClick={onWeek}>Next Week</button>
             <button className="btn btn-secondary" onClick={onEvent}>Life Event</button>
+            <button className="btn btn-accent" onClick={onSocialMedia}>Social Media</button>
+            <button className="btn btn-ghost" style={{fontSize: '11px'}}>📱 {(game.followers / 1000000).toFixed(1)}M</button>
             <button className="btn btn-team-outline" onClick={onSimMonth}>Sim Month</button>
             <button className="btn btn-team-outline" onClick={onSimSeason}>Sim Season</button>
           </div>
@@ -2149,6 +2372,7 @@ function HomePanel({ game, avg, onWeek, onEvent, onSimMonth, onSimSeason }){
 
 function TrainingPanel({ game, onTrain, onEndorse, onShoeEndorse, onPremium, endorsements, shoeDeals, premiumServices, cash }){
   const [intensity, setIntensity] = useState(1);
+  const [showPremiumServices, setShowPremiumServices] = useState(false);
   const trainingOptions = ["Shooting","Finishing","Playmaking","Defense","Rebounding","Stamina","Dunking","Passing","Leadership","Balanced","Recovery"];
   const ageMultiplier = getAgeMultiplier(game.age);
   
@@ -2412,7 +2636,7 @@ function TrainingPanel({ game, onTrain, onEndorse, onShoeEndorse, onPremium, end
         <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>Brand Deals</h3>
         
         <div style={{marginBottom: '12px'}}>
-          <div style={{fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px'}}>Cash: ${cash}k</div>
+          <div style={{fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px'}}>Cash: {formatMoney(cash)}</div>
           <div style={{display: 'flex', gap: '4px'}}>
             <button onClick={onEndorse} className="btn btn-team btn-sm" style={{flex: 1}}>
               Get Endorsement
@@ -2448,8 +2672,8 @@ function TrainingPanel({ game, onTrain, onEndorse, onShoeEndorse, onPremium, end
       <div className="panel panel-content-tight">
         <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>Premium Services</h3>
         
-        <button onClick={onPremium} className="btn btn-primary btn-sm" style={{width: '100%', marginBottom: '12px'}}>
-          Buy Premium Service
+        <button onClick={() => setShowPremiumServices(true)} className="btn btn-primary btn-sm" style={{width: '100%', marginBottom: '12px'}}>
+          Browse Premium Services
         </button>
         
         <div style={{maxHeight: '120px', overflowY: 'auto'}}>
@@ -2473,6 +2697,56 @@ function TrainingPanel({ game, onTrain, onEndorse, onShoeEndorse, onPremium, end
           )}
         </div>
       </div>
+      
+      {/* Premium Services Modal */}
+      {showPremiumServices && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 fade-in">
+          <div className="panel panel-content w-full max-w-2xl mx-4" style={{maxHeight: '80vh', overflowY: 'auto'}}>
+            <h3 className="text-xl font-bold mb-4 text-team-primary">Premium Services</h3>
+            <div className="grid-2" style={{gap: '12px'}}>
+              {PREMIUM_SERVICES.map((service, index) => {
+                const isActive = premiumServices.find(s => s.name === service.name);
+                const canAfford = cash >= service.cost;
+                
+                return (
+                  <div key={index} style={{
+                    padding: '16px',
+                    border: '1px solid var(--border-primary)',
+                    borderRadius: '12px',
+                    background: isActive ? 'rgba(var(--team-primary-rgb), 0.1)' : 'var(--bg-secondary)',
+                    opacity: isActive ? 0.6 : 1
+                  }}>
+                    <div style={{fontSize: '16px', fontWeight: 'bold', marginBottom: '8px', color: 'var(--team-primary)'}}>
+                      {service.name}
+                    </div>
+                    <div style={{fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '8px'}}>
+                      {service.description}
+                    </div>
+                    <div style={{fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px'}}>
+                      Duration: {service.duration} weeks • Cost: ${service.cost}k
+                    </div>
+                    <button 
+                      onClick={() => {
+                        if (!isActive && canAfford) {
+                          onPremium(service);
+                        }
+                      }}
+                      disabled={isActive || !canAfford}
+                      className={`btn btn-sm ${canAfford && !isActive ? 'btn-primary' : 'btn-ghost'}`}
+                      style={{width: '100%'}}
+                    >
+                      {isActive ? 'Active' : !canAfford ? `Need $${service.cost}k` : 'Hire'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex justify-end mt-4">
+              <button className="btn btn-ghost" onClick={() => setShowPremiumServices(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2490,7 +2764,7 @@ function HealthPanel({ onHealth, cash, health, peak }){
       <div className="panel panel-content-tight">
         <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>Health Services</h3>
         <div style={{marginBottom: '12px', fontSize: '14px', fontWeight: 'bold', color: 'var(--team-primary)'}}>
-          Cash: ${cash}k
+          Cash: {formatMoney(cash)}
         </div>
         <div className="grid-4" style={{gap: '6px'}}>
           {healthOptions.map(option=> (
@@ -2703,6 +2977,33 @@ function AnalyticsPanel({ game }){
   const careerPER = seasons.map(s => s.averages?.per || 0);
   const careerTS = seasons.map(s => s.averages?.ts || 0);
   
+  // Format ranking display for better UX with legacy score consideration
+  const formatRanking = (rank, legacyScore = 0) => {
+    if (rank === "N/A" || rank <= 10) return `#${rank}`;
+    
+    // Use legacy score to determine appropriate ranking display
+    if (legacyScore >= 800) {
+      if (rank <= 15) return "Top 15";
+      if (rank <= 25) return "Top 25";
+    } else if (legacyScore >= 600) {
+      if (rank <= 25) return "Top 25";
+      if (rank <= 50) return "Top 50";
+    } else if (legacyScore >= 400) {
+      if (rank <= 50) return "Top 50";
+      if (rank <= 100) return "Top 100";
+    } else if (legacyScore >= 200) {
+      if (rank <= 100) return "Top 100";
+      if (rank <= 200) return "Top 200";
+    } else {
+      if (rank <= 200) return "Top 200";
+      if (rank <= 300) return "Top 300";
+      if (rank <= 400) return "Top 400";
+      if (rank <= 500) return "Top 500";
+    }
+    
+    return "Unranked";
+  };
+  
   // Calculate analytics data safely
   const playerScore = calculatePlayerScore(game);
   const hofChance = getHallOfFameChance(game);
@@ -2711,6 +3012,7 @@ function AnalyticsPanel({ game }){
   
   const playerCurrentRank = currentRankings.find(p => p.isPlayer)?.rank || "N/A";
   const playerAllTimeRank = allTimeRankings.find(p => p.isPlayer)?.rank || "N/A";
+  const formattedAllTimeRank = formatRanking(playerAllTimeRank, playerScore);
   
   // Safely get awards data from totals
   const totals = game.career?.totals || {};
@@ -2725,6 +3027,21 @@ function AnalyticsPanel({ game }){
         
         {seasons.length > 0 ? (
           <div style={{gap: '12px', display: 'flex', flexDirection: 'column'}}>
+            {/* Legacy Score */}
+            <div style={{
+              background: 'linear-gradient(135deg, var(--team-primary), var(--team-secondary))',
+              borderRadius: '12px',
+              padding: '12px',
+              textAlign: 'center',
+              marginBottom: '8px'
+            }}>
+              <div style={{fontSize: '10px', color: 'var(--team-text)', opacity: '0.9', fontWeight: '600'}}>LEGACY SCORE</div>
+              <div style={{fontSize: '24px', fontWeight: 'bold', color: 'var(--team-text)'}}>{playerScore}</div>
+              <div style={{fontSize: '11px', color: 'var(--team-text)', opacity: '0.8'}}>
+                Career Impact Rating
+              </div>
+            </div>
+            
             {/* Hall of Fame Probability */}
             <div style={{
               background: hofChance >= 60 ? 'linear-gradient(135deg, #10b981, #059669)' : 
@@ -2859,7 +3176,7 @@ function AnalyticsPanel({ game }){
               textAlign: 'center'
             }}>
               <div style={{fontSize: '10px', color: 'white', opacity: '0.9', fontWeight: '600'}}>ALL-TIME RANK</div>
-              <div style={{fontSize: '18px', fontWeight: 'bold', color: 'white'}}>#{playerAllTimeRank}</div>
+              <div style={{fontSize: '18px', fontWeight: 'bold', color: 'white'}}>{formattedAllTimeRank}</div>
               <div style={{fontSize: '9px', color: 'white', opacity: '0.8'}}>Legacy Score: {playerScore}</div>
             </div>
 
@@ -3194,22 +3511,6 @@ function Toast({ text }){
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 panel panel-content-tight z-50 fade-in">
       <div className="font-medium text-center">{text}</div>
-    </div>
-  );
-}
-
-function ChampionshipToast({ title, titleCount, isFinalsMVP, onClose }){
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 fade-in">
-      <div className="panel panel-content bg-gradient-to-r from-yellow-400 to-yellow-600 text-black text-center max-w-md mx-4">
-        <div className="text-3xl font-bold mb-4">NBA CHAMPION!</div>
-        <div className="text-xl mb-4">
-          You got a ring! This is your <strong>#{titleCount}</strong> championship{isFinalsMVP ? ' and you won Finals MVP!' : '!'}
-        </div>
-        <button className="btn bg-black text-yellow-400 hover:bg-gray-800 font-bold px-8 py-3" onClick={onClose}>
-          Amazing!
-        </button>
-      </div>
     </div>
   );
 }
