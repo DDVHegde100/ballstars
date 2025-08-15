@@ -2825,12 +2825,51 @@ export default function BasketballLife(){
   }
 
   function hallOfFameOdds(p){
-    const t=p.career.totals; const o=p.ratings.overall;
+    const t = p.career.totals; 
+    const o = p.ratings.overall;
+    const years = p.career.seasons || 1;
+    
     let score = 0;
-    score += (t.points/1000) * 0.6;
-    score += t.titles * 6 + t.mvps * 10 + t.finalsMVPs * 8 + t.allstars * 2 + t.scoring * 3;
-    score += (o/100) * 10;
-    return clamp(score, 0, 100);
+    
+    // Points per game factor (normalized)
+    const ppg = t.points / years;
+    if (ppg >= 25) score += 25;
+    else if (ppg >= 20) score += 18;
+    else if (ppg >= 15) score += 12;
+    else if (ppg >= 10) score += 6;
+    
+    // Championship achievements (most important)
+    score += (t.titles || 0) * 12;
+    score += (t.finalsMVPs || 0) * 15;
+    
+    // Individual achievements
+    score += (t.mvps || 0) * 20;
+    score += (t.allstars || 0) * 3;
+    score += (t.scoring || 0) * 4;
+    
+    // Peak overall rating bonus
+    if (o >= 95) score += 20;
+    else if (o >= 90) score += 15;
+    else if (o >= 85) score += 10;
+    else if (o >= 80) score += 5;
+    
+    // Longevity bonus
+    if (years >= 15) score += 10;
+    else if (years >= 12) score += 6;
+    else if (years >= 10) score += 3;
+    
+    // Career totals bonus
+    if (t.points >= 30000) score += 15;
+    else if (t.points >= 25000) score += 10;
+    else if (t.points >= 20000) score += 6;
+    else if (t.points >= 15000) score += 3;
+    
+    // Convert to percentage (0-100) with realistic caps
+    score = Math.min(score, 95); // Cap at 95% max
+    score = Math.max(score, 0);  // Floor at 0%
+    
+    // Return as decimal for probability calculations
+    return score / 100;
   }
 
   // Post-Retirement Functions
@@ -2838,26 +2877,34 @@ export default function BasketballLife(){
     setGame(prev=>{
       const p = deepClone(prev);
       
-      // Simulate Hall of Fame voting
+      // Simulate Hall of Fame voting with realistic mechanics
       const hofOdds = p.retirementCelebration.hofOdds;
       const randomRoll = Math.random();
-      const inducted = randomRoll < hofOdds;
+      
+      // More realistic voting simulation
+      const baseVotingPercentage = hofOdds * 100;
+      const variance = Math.random() * 20 - 10; // ±10% variance
+      const actualVotingPercentage = Math.max(0, Math.min(100, baseVotingPercentage + variance));
+      
+      const inducted = actualVotingPercentage >= 75; // Need 75% to get inducted
       
       p.retirementCelebration.hofResult = {
         inducted: inducted,
-        votingPercentage: Math.round((randomRoll + hofOdds) / 2 * 100), // Simulated voting %
-        yearInducted: p.season + 3, // HoF typically 3 years after retirement
-        rank: inducted ? calculateHofRanking(p) : null
+        votingPercentage: Math.round(actualVotingPercentage),
+        yearInducted: inducted ? p.season + 3 : null,
+        rank: inducted ? calculateHofRanking(p) : null,
+        votesReceived: Math.round((actualVotingPercentage / 100) * 120), // Out of 120 voters
+        votesNeeded: 90 // Need 90 votes (75% of 120)
       };
       
       p.postRetirement.phase = 'hof_result';
       
       if (inducted) {
-        p.career.timeline.push(event("Hall of Fame", `Inducted into Basketball Hall of Fame!`));
+        p.career.timeline.push(event("Hall of Fame", `Inducted into Basketball Hall of Fame with ${actualVotingPercentage.toFixed(1)}% of votes!`));
         pushToast("🏆 HALL OF FAME INDUCTEE! 🏆");
       } else {
-        p.career.timeline.push(event("Hall of Fame", `Not selected for Hall of Fame this year.`));
-        pushToast("Hall of Fame voting results announced");
+        p.career.timeline.push(event("Hall of Fame", `Received ${actualVotingPercentage.toFixed(1)}% of Hall of Fame votes (needed 75%).`));
+        pushToast(`Hall of Fame: ${actualVotingPercentage.toFixed(1)}% of votes received`);
       }
       
       return p;
@@ -2899,8 +2946,9 @@ export default function BasketballLife(){
       opportunities.push({
         type: 'head_coach',
         team: pick(TEAMS),
-        salary: Math.round(reputation * 0.5 + Math.random() * 20),
-        requirements: { reputation: 60, experience: 0 }
+        salary: Math.round(reputation * 0.8 + Math.random() * 30), // $50-80k
+        requirements: { reputation: 60, experience: 0 },
+        description: "Lead a team as head coach, manage strategies and player development"
       });
     }
     
@@ -2908,8 +2956,9 @@ export default function BasketballLife(){
       opportunities.push({
         type: 'assistant_coach',
         team: pick(TEAMS),
-        salary: Math.round(reputation * 0.3 + Math.random() * 10),
-        requirements: { reputation: 40, experience: 0 }
+        salary: Math.round(reputation * 0.5 + Math.random() * 20), // $20-40k
+        requirements: { reputation: 40, experience: 0 },
+        description: "Support the head coach and work directly with players"
       });
     }
     
@@ -2918,19 +2967,24 @@ export default function BasketballLife(){
       opportunities.push({
         type: 'general_manager',
         team: pick(TEAMS),
-        salary: Math.round(reputation * 0.8 + Math.random() * 30),
-        requirements: { reputation: 70, experience: 2 }
+        salary: Math.round(reputation * 1.2 + Math.random() * 50), // $80-120k
+        requirements: { reputation: 70, experience: 2 },
+        description: "Manage trades, draft picks, and team roster construction"
       });
     }
     
-    // Team ownership (if enough money)
-    if (player.cash > 1000) { // Need at least $1B (1000k in game money)
-      opportunities.push({
-        type: 'team_purchase',
-        team: pick(TEAMS),
-        cost: Math.round(800 + Math.random() * 400), // $800M-$1.2B
-        requirements: { cash: 800 }
-      });
+    // Team ownership (much more expensive and comprehensive)
+    if (player.cash > 5000) { // Need at least $5B
+      const teams = TEAMS.filter(team => !player.postRetirement.ownedTeams?.some(owned => owned.team === team));
+      if (teams.length > 0) {
+        opportunities.push({
+          type: 'team_purchase',
+          team: pick(teams),
+          cost: Math.round(4000 + Math.random() * 2000), // $4-6B
+          requirements: { cash: 4000 },
+          description: "Complete ownership and control of an NBA franchise"
+        });
+      }
     }
     
     return opportunities;
@@ -2943,28 +2997,68 @@ export default function BasketballLife(){
       if (position.type === 'team_purchase') {
         if (p.cash >= position.cost) {
           p.cash -= position.cost;
-          p.postRetirement.ownedTeams.push({
+          
+          // Initialize team ownership data
+          if (!p.postRetirement.ownedTeams) p.postRetirement.ownedTeams = [];
+          
+          const newTeam = {
             team: position.team,
             purchasePrice: position.cost,
             currentValue: position.cost,
-            season: p.season
-          });
-          p.career.timeline.push(event("Business", `Purchased ${position.team} for $${position.cost}k`));
+            season: p.season,
+            finances: {
+              revenue: Math.round(300 + Math.random() * 200), // $300-500M annual revenue
+              expenses: Math.round(250 + Math.random() * 150), // $250-400M annual expenses
+              profit: 0, // Calculated
+              ticketPrices: 150, // Average ticket price
+              attendance: 18000, // Average attendance
+              merchandising: Math.round(50 + Math.random() * 30),
+              sponsorships: Math.round(80 + Math.random() * 40),
+              tvDeals: Math.round(100 + Math.random() * 50)
+            },
+            operations: {
+              teamChemistry: Math.round(70 + Math.random() * 20),
+              fanSatisfaction: Math.round(60 + Math.random() * 30),
+              mediaRating: Math.round(50 + Math.random() * 40),
+              facilityQuality: Math.round(70 + Math.random() * 20),
+              coachingStaff: Math.round(60 + Math.random() * 30)
+            },
+            roster: generateTeamRoster(position.team),
+            achievements: {
+              seasonsOwned: 0,
+              titlesWon: 0,
+              playoffAppearances: 0,
+              totalWins: 0
+            }
+          };
+          
+          // Calculate initial profit
+          newTeam.finances.profit = newTeam.finances.revenue - newTeam.finances.expenses;
+          
+          p.postRetirement.ownedTeams.push(newTeam);
+          p.career.timeline.push(event("Business", `Purchased ${position.team} for ${formatMoney(position.cost)}`));
           pushToast(`🏢 You now own the ${position.team}!`);
         } else {
           pushToast("Not enough money to purchase team");
           return p;
         }
       } else {
+        // Coaching/Management position
         p.postRetirement.managedTeam = {
           team: position.team,
           role: position.type,
           salary: position.salary,
           startSeason: p.season,
-          record: { wins: 0, losses: 0 }
+          record: { wins: 0, losses: 0 },
+          experience: 0,
+          achievements: {
+            titlesWon: 0,
+            playoffAppearances: 0,
+            coachOfYearAwards: 0
+          }
         };
         p.career.timeline.push(event("Management", `Accepted ${position.type} position with ${position.team}`));
-        pushToast(`🏀 Welcome to the ${position.team} front office!`);
+        pushToast(`🏀 Welcome to the ${position.team} organization!`);
       }
       
       // Remove accepted position from available
@@ -2972,6 +3066,155 @@ export default function BasketballLife(){
       
       return p;
     });
+  }
+
+  // Team ownership management functions
+  function manageTeamOwnership(teamIndex, action, value) {
+    setGame(prev => {
+      const p = deepClone(prev);
+      const team = p.postRetirement.ownedTeams[teamIndex];
+      
+      if (!team) return p;
+      
+      switch (action) {
+        case 'adjust_ticket_prices':
+          const newPrice = Math.max(50, Math.min(500, value));
+          const priceChange = newPrice - team.finances.ticketPrices;
+          team.finances.ticketPrices = newPrice;
+          
+          // Attendance responds to price changes
+          const attendanceChange = -priceChange * 50; // 50 fans per $1 change
+          team.finances.attendance = Math.max(5000, Math.min(22000, team.finances.attendance + attendanceChange));
+          
+          // Update revenue
+          updateTeamRevenue(team);
+          pushToast(`Ticket prices set to $${newPrice}. Attendance: ${team.finances.attendance.toLocaleString()}`);
+          break;
+          
+        case 'upgrade_facilities':
+          const upgradeCost = 500; // $500M
+          if (p.cash >= upgradeCost) {
+            p.cash -= upgradeCost;
+            team.operations.facilityQuality = Math.min(100, team.operations.facilityQuality + 15);
+            team.operations.fanSatisfaction = Math.min(100, team.operations.fanSatisfaction + 10);
+            team.currentValue += upgradeCost * 0.8; // 80% return on investment
+            pushToast("🏟️ Facilities upgraded! Fan satisfaction and team value increased.");
+          } else {
+            pushToast("Not enough money for facility upgrade");
+          }
+          break;
+          
+        case 'hire_coaching_staff':
+          const staffCost = 100; // $100M
+          if (p.cash >= staffCost) {
+            p.cash -= staffCost;
+            team.operations.coachingStaff = Math.min(100, team.operations.coachingStaff + 20);
+            team.operations.teamChemistry = Math.min(100, team.operations.teamChemistry + 10);
+            team.finances.expenses += 20; // Increase annual expenses
+            pushToast("👨‍🏫 Elite coaching staff hired! Team chemistry improved.");
+          } else {
+            pushToast("Not enough money to hire coaching staff");
+          }
+          break;
+          
+        case 'marketing_campaign':
+          const marketingCost = 80; // $80M
+          if (p.cash >= marketingCost) {
+            p.cash -= marketingCost;
+            team.operations.mediaRating = Math.min(100, team.operations.mediaRating + 15);
+            team.finances.merchandising += 20;
+            team.finances.attendance = Math.min(22000, team.finances.attendance + 2000);
+            updateTeamRevenue(team);
+            pushToast("📺 Marketing campaign launched! Media rating and attendance increased.");
+          } else {
+            pushToast("Not enough money for marketing campaign");
+          }
+          break;
+          
+        case 'trade_for_star':
+          const tradeCost = 200; // $200M luxury tax hit
+          if (p.cash >= tradeCost) {
+            p.cash -= tradeCost;
+            // Improve team by adding a star player
+            const starPlayer = generateStarPlayer();
+            team.roster.push(starPlayer);
+            team.operations.teamChemistry = Math.min(100, team.operations.teamChemistry + 25);
+            team.operations.fanSatisfaction = Math.min(100, team.operations.fanSatisfaction + 20);
+            team.finances.attendance = Math.min(22000, team.finances.attendance + 3000);
+            updateTeamRevenue(team);
+            pushToast(`⭐ Traded for superstar ${starPlayer.name}! Team significantly improved.`);
+          } else {
+            pushToast("Not enough money for superstar trade");
+          }
+          break;
+          
+        case 'change_colors':
+          // Cosmetic change that boosts fan engagement
+          team.operations.fanSatisfaction = Math.min(100, team.operations.fanSatisfaction + 5);
+          team.finances.merchandising += 10;
+          pushToast("🎨 Team colors updated! Merchandise sales increased.");
+          break;
+      }
+      
+      return p;
+    });
+  }
+  
+  function updateTeamRevenue(team) {
+    // Recalculate revenue based on current metrics
+    const baseRevenue = 200;
+    const ticketRevenue = (team.finances.ticketPrices * team.finances.attendance * 41) / 1000000; // 41 home games
+    const merchandisingRevenue = team.finances.merchandising;
+    const sponsorshipRevenue = team.finances.sponsorships;
+    const tvRevenue = team.finances.tvDeals;
+    
+    team.finances.revenue = Math.round(baseRevenue + ticketRevenue + merchandisingRevenue + sponsorshipRevenue + tvRevenue);
+    team.finances.profit = team.finances.revenue - team.finances.expenses;
+  }
+  
+  function generateTeamRoster(teamName) {
+    const roster = [];
+    for (let i = 0; i < 12; i++) {
+      roster.push({
+        name: `${pick(['James', 'Michael', 'John', 'David', 'Chris', 'Kevin', 'Paul', 'Mark', 'Jason', 'Anthony'])} ${pick(['Johnson', 'Williams', 'Brown', 'Jones', 'Miller', 'Davis', 'Garcia', 'Rodriguez', 'Wilson', 'Martinez'])}`,
+        position: pick(['PG', 'SG', 'SF', 'PF', 'C']),
+        overall: Math.round(60 + Math.random() * 30),
+        salary: Math.round(5 + Math.random() * 20), // $5-25M
+        age: Math.round(20 + Math.random() * 15)
+      });
+    }
+    return roster;
+  }
+  
+  function generateStarPlayer() {
+    return {
+      name: `${pick(['LeBron', 'Stephen', 'Kevin', 'Giannis', 'Luka', 'Jayson', 'Devin', 'Ja', 'Zion', 'Trae'])} ${pick(['Jackson', 'Thompson', 'Anderson', 'Taylor', 'Thomas', 'Jackson', 'White', 'Harris', 'Martin', 'Thompson'])}`,
+      position: pick(['PG', 'SG', 'SF', 'PF', 'C']),
+      overall: Math.round(85 + Math.random() * 10),
+      salary: Math.round(35 + Math.random() * 15), // $35-50M
+      age: Math.round(23 + Math.random() * 8)
+    };
+  }
+
+  // Coaching simulation functions
+  function simulateCoachingSeason(managedTeam) {
+    const wins = Math.round(20 + Math.random() * 62); // 20-82 wins
+    const losses = 82 - wins;
+    
+    managedTeam.record.wins += wins;
+    managedTeam.record.losses += losses;
+    managedTeam.experience++;
+    
+    // Check for achievements
+    if (wins >= 50) {
+      managedTeam.achievements.playoffAppearances++;
+    }
+    
+    if (wins >= 65) {
+      managedTeam.achievements.coachOfYearAwards++;
+    }
+    
+    return { wins, losses, madePlayoffs: wins >= 50 };
   }
 
   function exportSave(){
@@ -3042,7 +3285,7 @@ export default function BasketballLife(){
           
           {game.postRetirement?.phase === 'management' && (
             <>
-              <ManagementTabs current={tab} onSelect={setTab} tabs={["Overview","Opportunities","Teams","Business","Legacy"]} />
+              <ManagementTabs current={tab} onSelect={setTab} tabs={["Overview","Opportunities","Ownership","Coaching","Business","Legacy"]} />
               
               {tab==="Overview" && (
                 <ManagementOverviewPanel game={game} />
@@ -3055,8 +3298,18 @@ export default function BasketballLife(){
                 />
               )}
               
-              {tab==="Teams" && (
-                <TeamManagementPanel game={game} />
+              {tab==="Ownership" && (
+                <TeamOwnershipPanel 
+                  game={game} 
+                  onManageTeam={manageTeamOwnership}
+                />
+              )}
+              
+              {tab==="Coaching" && (
+                <CoachingPanel 
+                  game={game} 
+                  onSimulateSeason={(team) => simulateCoachingSeason(team)}
+                />
               )}
               
               {tab==="Business" && (
@@ -3216,28 +3469,25 @@ function Header({ game, onReset, onExport, onImport, onRetire, onAppearanceChang
             <div className="player-details">
               <div className="player-name-section">
                 <h1>{game.firstName} {game.lastName}</h1>
-                <div className="player-position">{game.archetype}</div>
+                <div className="player-position">{game.archetype} • #{game.jersey}</div>
               </div>
               <div className="player-meta">
                 <div className="player-meta-item team-badge">
-                  <span className="player-meta-label">Team:</span>
-                  <span className="player-meta-value">{teamName}</span>
-                </div>
-                <div className="player-meta-item">
-                  <span className="player-meta-label">#</span>
-                  <span className="player-meta-value">{game.jersey}</span>
+                  <div className="player-meta-label">Team</div>
+                  <div className="player-meta-value">{teamName}</div>
                 </div>
                 <div className="player-meta-item stat-badge">
-                  <span className="player-meta-label">OVR:</span>
-                  <span className="player-meta-value">{game.ratings.overall}</span>
+                  <div className="player-meta-label">Overall</div>
+                  <div className="player-meta-value">{game.ratings.overall}</div>
                 </div>
                 <div className="player-meta-item stat-badge">
-                  <span className="player-meta-label">Cash:</span>
-                  <span className="player-meta-value">{formatMoney(game.cash)}</span>
+                  <div className="player-meta-label">Money</div>
+                  <div className="player-meta-value">{formatMoney(game.cash)}</div>
                 </div>
                 {game.relationships?.girlfriend && (
                   <div className="player-meta-item">
-                    <span className="player-meta-value">💕 {game.relationships.girlfriend.name}</span>
+                    <div className="player-meta-label">Partner</div>
+                    <div className="player-meta-value">💕 {game.relationships.girlfriend.name}</div>
                   </div>
                 )}
               </div>
@@ -6239,55 +6489,326 @@ function ManagementOpportunitiesPanel({ game, onAcceptPosition }) {
   );
 }
 
-function TeamManagementPanel({ game }) {
+function TeamOwnershipPanel({ game, onManageTeam }) {
+  const ownedTeams = game.postRetirement.ownedTeams || [];
+  
+  return (
+    <div className="panel">
+      <div className="panel-content">
+        <h2>� Team Ownership Dashboard</h2>
+        
+        {ownedTeams.length === 0 ? (
+          <div className="panel" style={{textAlign: 'center', padding: '3rem'}}>
+            <h3>🏀 No Teams Owned</h3>
+            <p>You don't currently own any NBA franchises.</p>
+            <p style={{opacity: 0.7}}>Check the Opportunities tab to find teams available for purchase!</p>
+          </div>
+        ) : (
+          <div style={{display: 'flex', flexDirection: 'column', gap: '2rem'}}>
+            {ownedTeams.map((team, index) => (
+              <div key={index} className="panel" style={{
+                background: 'linear-gradient(135deg, rgba(59,130,246,0.1), rgba(147,51,234,0.1))',
+                border: '2px solid rgba(59,130,246,0.3)'
+              }}>
+                <div style={{display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem', alignItems: 'start'}}>
+                  {/* Team Header */}
+                  <div>
+                    <h3 style={{fontSize: '2rem', marginBottom: '1rem'}}>🏀 {team.team}</h3>
+                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem'}}>
+                      <div className="stat-box">
+                        <div className="stat-label">Purchase Price</div>
+                        <div className="stat-value">{formatMoney(team.purchasePrice)}</div>
+                      </div>
+                      <div className="stat-box">
+                        <div className="stat-label">Current Value</div>
+                        <div className="stat-value" style={{color: team.currentValue > team.purchasePrice ? '#10b981' : '#ef4444'}}>
+                          {formatMoney(team.currentValue)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Financial Overview */}
+                  <div>
+                    <h4>💰 Financial Performance</h4>
+                    <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1rem'}}>
+                      <div className="stat-box">
+                        <div className="stat-label">Annual Revenue</div>
+                        <div className="stat-value" style={{color: '#10b981'}}>{formatMoney(team.finances.revenue)}</div>
+                      </div>
+                      <div className="stat-box">
+                        <div className="stat-label">Annual Expenses</div>
+                        <div className="stat-value" style={{color: '#ef4444'}}>{formatMoney(team.finances.expenses)}</div>
+                      </div>
+                      <div className="stat-box">
+                        <div className="stat-label">Net Profit</div>
+                        <div className="stat-value" style={{color: team.finances.profit > 0 ? '#10b981' : '#ef4444'}}>
+                          {formatMoney(team.finances.profit)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Team Operations */}
+                <div style={{marginTop: '2rem'}}>
+                  <h4>🏟️ Team Operations</h4>
+                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '2rem'}}>
+                    <div className="metric-card">
+                      <div className="metric-label">Fan Satisfaction</div>
+                      <div className="metric-value">{team.operations.fanSatisfaction}%</div>
+                      <div className="metric-bar">
+                        <div className="metric-fill" style={{width: `${team.operations.fanSatisfaction}%`}}></div>
+                      </div>
+                    </div>
+                    <div className="metric-card">
+                      <div className="metric-label">Team Chemistry</div>
+                      <div className="metric-value">{team.operations.teamChemistry}%</div>
+                      <div className="metric-bar">
+                        <div className="metric-fill" style={{width: `${team.operations.teamChemistry}%`}}></div>
+                      </div>
+                    </div>
+                    <div className="metric-card">
+                      <div className="metric-label">Media Rating</div>
+                      <div className="metric-value">{team.operations.mediaRating}%</div>
+                      <div className="metric-bar">
+                        <div className="metric-fill" style={{width: `${team.operations.mediaRating}%`}}></div>
+                      </div>
+                    </div>
+                    <div className="metric-card">
+                      <div className="metric-label">Facility Quality</div>
+                      <div className="metric-value">{team.operations.facilityQuality}%</div>
+                      <div className="metric-bar">
+                        <div className="metric-fill" style={{width: `${team.operations.facilityQuality}%`}}></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Management Actions */}
+                <div>
+                  <h4>⚙️ Management Actions</h4>
+                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem'}}>
+                    <div className="action-card">
+                      <h5>🎫 Ticket Pricing</h5>
+                      <p>Current: ${team.finances.ticketPrices}</p>
+                      <p>Attendance: {team.finances.attendance.toLocaleString()}</p>
+                      <div style={{display: 'flex', gap: '0.5rem', marginTop: '1rem'}}>
+                        <button 
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => onManageTeam(index, 'adjust_ticket_prices', team.finances.ticketPrices - 25)}
+                        >
+                          -$25
+                        </button>
+                        <button 
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => onManageTeam(index, 'adjust_ticket_prices', team.finances.ticketPrices + 25)}
+                        >
+                          +$25
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div className="action-card">
+                      <h5>🏟️ Facility Upgrades</h5>
+                      <p>Quality: {team.operations.facilityQuality}%</p>
+                      <p>Cost: {formatMoney(500)}</p>
+                      <button 
+                        className="btn btn-primary btn-sm"
+                        onClick={() => onManageTeam(index, 'upgrade_facilities')}
+                        style={{width: '100%', marginTop: '1rem'}}
+                      >
+                        Upgrade
+                      </button>
+                    </div>
+                    
+                    <div className="action-card">
+                      <h5>👨‍🏫 Coaching Staff</h5>
+                      <p>Quality: {team.operations.coachingStaff}%</p>
+                      <p>Cost: {formatMoney(100)}</p>
+                      <button 
+                        className="btn btn-primary btn-sm"
+                        onClick={() => onManageTeam(index, 'hire_coaching_staff')}
+                        style={{width: '100%', marginTop: '1rem'}}
+                      >
+                        Hire Elite Staff
+                      </button>
+                    </div>
+                    
+                    <div className="action-card">
+                      <h5>📺 Marketing</h5>
+                      <p>Media Rating: {team.operations.mediaRating}%</p>
+                      <p>Cost: {formatMoney(80)}</p>
+                      <button 
+                        className="btn btn-warning btn-sm"
+                        onClick={() => onManageTeam(index, 'marketing_campaign')}
+                        style={{width: '100%', marginTop: '1rem'}}
+                      >
+                        Launch Campaign
+                      </button>
+                    </div>
+                    
+                    <div className="action-card">
+                      <h5>⭐ Acquire Superstar</h5>
+                      <p>Team Chemistry: {team.operations.teamChemistry}%</p>
+                      <p>Cost: {formatMoney(200)}</p>
+                      <button 
+                        className="btn btn-success btn-sm"
+                        onClick={() => onManageTeam(index, 'trade_for_star')}
+                        style={{width: '100%', marginTop: '1rem'}}
+                      >
+                        Make Trade
+                      </button>
+                    </div>
+                    
+                    <div className="action-card">
+                      <h5>🎨 Rebrand Team</h5>
+                      <p>Change colors, logo, jerseys</p>
+                      <p>Cost: Free</p>
+                      <button 
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => onManageTeam(index, 'change_colors')}
+                        style={{width: '100%', marginTop: '1rem'}}
+                      >
+                        Rebrand
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Current Roster */}
+                <div style={{marginTop: '2rem'}}>
+                  <h4>🏀 Current Roster</h4>
+                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem'}}>
+                    {team.roster.slice(0, 8).map((player, playerIndex) => (
+                      <div key={playerIndex} className="player-card">
+                        <div className="player-name">{player.name}</div>
+                        <div className="player-position">{player.position}</div>
+                        <div className="player-overall">{player.overall} OVR</div>
+                        <div className="player-salary">{formatMoney(player.salary)}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {team.roster.length > 8 && (
+                    <p style={{textAlign: 'center', marginTop: '1rem', opacity: 0.7}}>
+                      +{team.roster.length - 8} more players
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CoachingPanel({ game, onSimulateSeason }) {
   const managedTeam = game.postRetirement.managedTeam;
   
   return (
     <div className="panel">
       <div className="panel-content">
-        <h2>🏀 Team Management</h2>
+        <h2>🏀 Coaching Dashboard</h2>
         
         {managedTeam ? (
           <div>
-            <div className="panel" style={{background: 'linear-gradient(135deg, rgba(59,130,246,0.1), rgba(147,51,234,0.1))', marginBottom: '2rem'}}>
-              <h3>{managedTeam.team} - {managedTeam.role.replace('_', ' ').toUpperCase()}</h3>
-              <p><strong>Joined:</strong> Season {managedTeam.startSeason}</p>
-              <p><strong>Salary:</strong> {formatMoney(managedTeam.salary)}/year</p>
-              <p><strong>Record:</strong> {managedTeam.record.wins}-{managedTeam.record.losses}</p>
+            {/* Team Header */}
+            <div className="panel" style={{
+              background: 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.1))',
+              border: '2px solid rgba(16,185,129,0.3)',
+              marginBottom: '2rem'
+            }}>
+              <div style={{display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', gap: '2rem', alignItems: 'center'}}>
+                <div>
+                  <h3 style={{fontSize: '2rem'}}>{managedTeam.team}</h3>
+                  <p style={{fontSize: '1.2rem', opacity: 0.8}}>
+                    {managedTeam.role.replace('_', ' ').toUpperCase()}
+                  </p>
+                </div>
+                
+                <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem'}}>
+                  <div className="stat-box">
+                    <div className="stat-label">Experience</div>
+                    <div className="stat-value">{managedTeam.experience} years</div>
+                  </div>
+                  <div className="stat-box">
+                    <div className="stat-label">Record</div>
+                    <div className="stat-value">{managedTeam.record.wins}-{managedTeam.record.losses}</div>
+                  </div>
+                  <div className="stat-box">
+                    <div className="stat-label">Win %</div>
+                    <div className="stat-value">
+                      {managedTeam.record.wins + managedTeam.record.losses > 0 
+                        ? ((managedTeam.record.wins / (managedTeam.record.wins + managedTeam.record.losses)) * 100).toFixed(1)
+                        : 0}%
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="stat-box">
+                  <div className="stat-label">Annual Salary</div>
+                  <div className="stat-value" style={{color: '#10b981'}}>{formatMoney(managedTeam.salary)}</div>
+                </div>
+              </div>
             </div>
             
-            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '2rem'}}>
+            {/* Coaching Actions */}
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '2rem', marginBottom: '2rem'}}>
               <div className="panel">
-                <h4>Team Actions</h4>
-                <button className="btn btn-secondary" style={{width: '100%', marginBottom: '1rem'}}>
-                  📊 View Team Stats
-                </button>
-                <button className="btn btn-secondary" style={{width: '100%', marginBottom: '1rem'}}>
-                  🔄 Make Trades
-                </button>
-                <button className="btn btn-secondary" style={{width: '100%'}}>
-                  📋 Set Lineups
-                </button>
+                <h4>📋 Team Management</h4>
+                <div style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
+                  <button className="btn btn-primary">🎯 Set Game Strategy</button>
+                  <button className="btn btn-primary">🔄 Manage Rotations</button>
+                  <button className="btn btn-primary">📊 Review Game Film</button>
+                  <button className="btn btn-primary">🏋️ Design Practice Plans</button>
+                </div>
               </div>
               
               <div className="panel">
-                <h4>Development</h4>
-                <button className="btn btn-secondary" style={{width: '100%', marginBottom: '1rem'}}>
-                  🏋️ Training Programs
+                <h4>🏆 Season Simulation</h4>
+                <p style={{marginBottom: '1rem'}}>Simulate coaching a full season with your team</p>
+                <button 
+                  className="btn btn-success btn-lg"
+                  onClick={() => {
+                    const result = onSimulateSeason(managedTeam);
+                    alert(`Season Complete!\nRecord: ${result.wins}-${result.losses}\n${result.madePlayoffs ? '🏆 Made Playoffs!' : 'Missed Playoffs'}`);
+                  }}
+                  style={{width: '100%'}}
+                >
+                  🎮 Simulate Season
                 </button>
-                <button className="btn btn-secondary" style={{width: '100%', marginBottom: '1rem'}}>
-                  🎯 Draft Strategy
-                </button>
-                <button className="btn btn-secondary" style={{width: '100%'}}>
-                  💼 Hire Staff
-                </button>
+              </div>
+            </div>
+            
+            {/* Achievements */}
+            <div className="panel">
+              <h4>🏆 Coaching Achievements</h4>
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem'}}>
+                <div className="achievement-card">
+                  <div className="achievement-icon">🏆</div>
+                  <div className="achievement-title">Championships</div>
+                  <div className="achievement-value">{managedTeam.achievements?.titlesWon || 0}</div>
+                </div>
+                <div className="achievement-card">
+                  <div className="achievement-icon">🎯</div>
+                  <div className="achievement-title">Playoff Appearances</div>
+                  <div className="achievement-value">{managedTeam.achievements?.playoffAppearances || 0}</div>
+                </div>
+                <div className="achievement-card">
+                  <div className="achievement-icon">👨‍🏫</div>
+                  <div className="achievement-title">Coach of Year Awards</div>
+                  <div className="achievement-value">{managedTeam.achievements?.coachOfYearAwards || 0}</div>
+                </div>
               </div>
             </div>
           </div>
         ) : (
-          <div className="panel" style={{textAlign: 'center', padding: '2rem'}}>
-            <p>You're not currently managing any team.</p>
-            <p style={{opacity: 0.7}}>Check the Opportunities tab to find coaching or front office positions!</p>
+          <div className="panel" style={{textAlign: 'center', padding: '3rem'}}>
+            <h3>🏀 No Coaching Position</h3>
+            <p>You're not currently coaching any team.</p>
+            <p style={{opacity: 0.7}}>Check the Opportunities tab to find coaching positions!</p>
           </div>
         )}
       </div>
