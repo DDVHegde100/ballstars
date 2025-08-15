@@ -30,7 +30,7 @@ const CHAMPIONSHIP_WINNERS = {};
 const fmt = (n, d = 1) => Number(n).toFixed(d);
 const sum = (arr) => arr.reduce((a, b) => a + b, 0);
 
-// Format money in millions instead of thousands
+// Format money in millions/billions
 const formatMoney = (amount) => {
   if (amount >= 1000000) {
     return `$${(amount / 1000000).toFixed(1)}B`;
@@ -39,6 +39,118 @@ const formatMoney = (amount) => {
   } else {
     return `$${amount}k`;
   }
+};
+
+// Game state management for seasons and years
+const getCurrentYear = (season) => 2024 + Math.floor((season - 1) / 1);
+const getCurrentAge = (birthYear, currentSeason) => getCurrentYear(currentSeason) - birthYear;
+
+// Enhanced team ownership opportunities with realistic pricing
+const TEAM_OWNERSHIP_OPPORTUNITIES = [
+  {
+    id: 'lakers',
+    team: 'Los Angeles Lakers',
+    price: 5800, // $5.8B
+    revenue: 450, // $450M annually
+    location: 'Los Angeles',
+    marketSize: 'Large',
+    fanBase: 95,
+    championships: 17,
+    difficulty: 'Medium'
+  },
+  {
+    id: 'warriors',
+    team: 'Golden State Warriors', 
+    price: 6200, // $6.2B
+    revenue: 500, // $500M annually
+    location: 'San Francisco',
+    marketSize: 'Large',
+    fanBase: 90,
+    championships: 7,
+    difficulty: 'Hard'
+  },
+  {
+    id: 'knicks',
+    team: 'New York Knicks',
+    price: 6500, // $6.5B
+    revenue: 520, // $520M annually
+    location: 'New York',
+    marketSize: 'Large',
+    fanBase: 88,
+    championships: 2,
+    difficulty: 'Hard'
+  },
+  {
+    id: 'bulls',
+    team: 'Chicago Bulls',
+    price: 4100, // $4.1B
+    revenue: 350, // $350M annually
+    location: 'Chicago',
+    marketSize: 'Large',
+    fanBase: 85,
+    championships: 6,
+    difficulty: 'Medium'
+  },
+  {
+    id: 'celtics',
+    team: 'Boston Celtics',
+    price: 4800, // $4.8B
+    revenue: 380, // $380M annually
+    location: 'Boston',
+    marketSize: 'Medium',
+    fanBase: 92,
+    championships: 18,
+    difficulty: 'Medium'
+  },
+  {
+    id: 'heat',
+    team: 'Miami Heat',
+    price: 3500, // $3.5B
+    revenue: 300, // $300M annually
+    location: 'Miami',
+    marketSize: 'Medium',
+    fanBase: 78,
+    championships: 3,
+    difficulty: 'Easy'
+  },
+  {
+    id: 'spurs',
+    team: 'San Antonio Spurs',
+    price: 2800, // $2.8B
+    revenue: 250, // $250M annually
+    location: 'San Antonio',
+    marketSize: 'Small',
+    fanBase: 75,
+    championships: 5,
+    difficulty: 'Easy'
+  },
+  {
+    id: 'pelicans',
+    team: 'New Orleans Pelicans',
+    price: 2200, // $2.2B
+    revenue: 200, // $200M annually
+    location: 'New Orleans',
+    marketSize: 'Small',
+    fanBase: 65,
+    championships: 0,
+    difficulty: 'Easy'
+  }
+];
+
+// Trade evaluation system
+const evaluateTradeValue = (playerOut, playerIn, cashOut = 0) => {
+  const outValue = (playerOut.overall * 2) + (playerOut.age < 30 ? 20 : -10) + (playerOut.salary < 20 ? 10 : -5);
+  const inValue = (playerIn.overall * 2) + (playerIn.age < 30 ? 20 : -10) + (playerIn.salary < 20 ? 10 : -5);
+  const cashValue = cashOut / 10; // Every $10M = 1 point
+  
+  const totalOut = outValue + cashValue;
+  const totalIn = inValue;
+  
+  if (totalOut > totalIn * 1.2) return 'Great Deal';
+  if (totalOut > totalIn * 1.1) return 'Good Deal';
+  if (totalOut > totalIn * 0.9) return 'Fair Deal';
+  if (totalOut > totalIn * 0.8) return 'Poor Deal';
+  return 'Terrible Deal';
 };
 
 // Generate random player appearance with comprehensive customization
@@ -986,6 +1098,18 @@ function newPlayer(custom){
     league: initializeLeague(),
     career: { seasons: [], awards: [], totals: resetCareerTotals(), timeline: [event("Signed", `Drafted by ${rookie.team}`)] },
     alive: true, retired: false,
+    // Enhanced post-retirement structure
+    postRetirement: {
+      phase: null, // 'celebration', 'hof_voting', 'management'
+      ownedTeams: [],
+      managedTeam: null,
+      coachingExperience: 0,
+      businessVentures: [],
+      reputation: 0,
+      availablePositions: [],
+      currentYear: getCurrentYear(1),
+      birthYear: getCurrentYear(1) - age
+    },
   };
 }
 
@@ -1676,7 +1800,15 @@ export default function BasketballLife(){
     pushToast("Avatar updated!");
   }
 
-  function pushToast(t){ setToast({ id: cryptoRandomId(), text: t}); setTimeout(()=>setToast(null), 2200); }
+  function pushToast(t, type = 'info'){ 
+    setToast({ 
+      id: cryptoRandomId(), 
+      text: t, 
+      type: type,
+      duration: type === 'error' ? 4000 : type === 'success' ? 3000 : 2200
+    }); 
+    setTimeout(()=>setToast(null), type === 'error' ? 4000 : type === 'success' ? 3000 : 2200); 
+  }
   
   function showAwardsPopup(awards, seasonNumber, isChampion, isFinalsMVP) {
     setAwardsPopup({ 
@@ -2816,7 +2948,9 @@ export default function BasketballLife(){
         businessVentures: [],
         trainingAcademy: null,
         reputation: Math.round(p.fame * 0.8), // Starting management reputation
-        availablePositions: []
+        availablePositions: [],
+        currentYear: getCurrentYear(p.season),
+        birthYear: p.postRetirement?.birthYear || (getCurrentYear(p.season) - p.age)
       };
       
       p.career.timeline.push(event("Retired","You have announced your retirement."));
@@ -2941,50 +3075,64 @@ export default function BasketballLife(){
     const opportunities = [];
     const reputation = player.postRetirement.reputation;
     
-    // Coaching opportunities
+    // Coaching opportunities (enhanced)
     if (reputation > 60) {
       opportunities.push({
         type: 'head_coach',
         team: pick(TEAMS),
-        salary: Math.round(reputation * 0.8 + Math.random() * 30), // $50-80k
+        salary: Math.round(reputation * 1.5 + Math.random() * 50), // $100-150M
         requirements: { reputation: 60, experience: 0 },
-        description: "Lead a team as head coach, manage strategies and player development"
+        description: "Lead a team as head coach, manage strategies and player development",
+        duration: 'Multi-year contract'
       });
     }
     
     if (reputation > 40) {
       opportunities.push({
-        type: 'assistant_coach',
+        type: 'assistant_coach', 
         team: pick(TEAMS),
-        salary: Math.round(reputation * 0.5 + Math.random() * 20), // $20-40k
+        salary: Math.round(reputation * 0.8 + Math.random() * 30), // $50-80M
         requirements: { reputation: 40, experience: 0 },
-        description: "Support the head coach and work directly with players"
+        description: "Support the head coach and work directly with players",
+        duration: '2-year contract'
       });
     }
     
-    // Front office opportunities
+    // Front office opportunities (enhanced)
     if (reputation > 70) {
       opportunities.push({
         type: 'general_manager',
         team: pick(TEAMS),
-        salary: Math.round(reputation * 1.2 + Math.random() * 50), // $80-120k
+        salary: Math.round(reputation * 2 + Math.random() * 80), // $150-200M
         requirements: { reputation: 70, experience: 2 },
-        description: "Manage trades, draft picks, and team roster construction"
+        description: "Manage trades, draft picks, and team roster construction",
+        duration: '5-year executive contract'
       });
     }
     
-    // Team ownership (much more expensive and comprehensive)
-    if (player.cash > 5000) { // Need at least $5B
-      const teams = TEAMS.filter(team => !player.postRetirement.ownedTeams?.some(owned => owned.team === team));
-      if (teams.length > 0) {
+    // Enhanced team ownership opportunities
+    if (player.cash >= 2000) { // Minimum $2B for smallest franchise
+      const availableTeams = TEAM_OWNERSHIP_OPPORTUNITIES.filter(teamOpp => 
+        !player.postRetirement.ownedTeams?.some(owned => owned.teamId === teamOpp.id) &&
+        player.cash >= teamOpp.price
+      );
+      
+      availableTeams.forEach(teamOpp => {
         opportunities.push({
           type: 'team_purchase',
-          team: pick(teams),
-          cost: Math.round(4000 + Math.random() * 2000), // $4-6B
-          requirements: { cash: 4000 },
-          description: "Complete ownership and control of an NBA franchise"
+          team: teamOpp.team,
+          teamId: teamOpp.id,
+          cost: teamOpp.price,
+          location: teamOpp.location,
+          marketSize: teamOpp.marketSize,
+          fanBase: teamOpp.fanBase,
+          championships: teamOpp.championships,
+          difficulty: teamOpp.difficulty,
+          expectedRevenue: teamOpp.revenue,
+          requirements: { cash: teamOpp.price },
+          description: `Own the ${teamOpp.team} in ${teamOpp.location} - ${teamOpp.marketSize} market with ${teamOpp.fanBase}% fan loyalty`
         });
-      }
+      });
     }
     
     return opportunities;
@@ -2994,42 +3142,81 @@ export default function BasketballLife(){
     setGame(prev=>{
       const p = deepClone(prev);
       
+      // Check if player already has a conflicting role
+      if (position.type === 'team_purchase' && p.postRetirement.managedTeam) {
+        pushToast("Cannot own a team while coaching another team. Resign first.");
+        return p;
+      }
+      
+      if (position.type !== 'team_purchase' && p.postRetirement.ownedTeams?.length > 0) {
+        pushToast("Cannot coach while owning teams. Focus on your ownership duties.");
+        return p;
+      }
+      
       if (position.type === 'team_purchase') {
         if (p.cash >= position.cost) {
           p.cash -= position.cost;
           
-          // Initialize team ownership data
+          // Initialize comprehensive team ownership data
           if (!p.postRetirement.ownedTeams) p.postRetirement.ownedTeams = [];
           
+          const teamOpp = TEAM_OWNERSHIP_OPPORTUNITIES.find(t => t.id === position.teamId);
           const newTeam = {
+            teamId: position.teamId,
             team: position.team,
+            location: position.location,
+            marketSize: position.marketSize,
             purchasePrice: position.cost,
             currentValue: position.cost,
-            season: p.season,
+            purchaseYear: p.postRetirement.currentYear,
+            ownership: 100, // Full ownership percentage
+            
             finances: {
-              revenue: Math.round(300 + Math.random() * 200), // $300-500M annual revenue
-              expenses: Math.round(250 + Math.random() * 150), // $250-400M annual expenses
+              revenue: teamOpp.revenue + irnd(-50, 50), // Base revenue with variation
+              expenses: Math.round(teamOpp.revenue * 0.75 + irnd(-30, 30)), // ~75% of revenue
               profit: 0, // Calculated
-              ticketPrices: 150, // Average ticket price
-              attendance: 18000, // Average attendance
-              merchandising: Math.round(50 + Math.random() * 30),
-              sponsorships: Math.round(80 + Math.random() * 40),
-              tvDeals: Math.round(100 + Math.random() * 50)
+              ticketPrices: irnd(80, 200), // $80-200 average ticket price
+              attendance: irnd(15000, 22000), // 15k-22k average attendance
+              merchandising: Math.round(teamOpp.revenue * 0.12 + irnd(-10, 15)),
+              sponsorships: Math.round(teamOpp.revenue * 0.25 + irnd(-20, 30)),
+              tvDeals: Math.round(teamOpp.revenue * 0.35 + irnd(-25, 40)),
+              luxuryTaxPaid: 0,
+              totalPayroll: irnd(120, 180) // $120-180M player salaries
             },
+            
             operations: {
-              teamChemistry: Math.round(70 + Math.random() * 20),
-              fanSatisfaction: Math.round(60 + Math.random() * 30),
-              mediaRating: Math.round(50 + Math.random() * 40),
-              facilityQuality: Math.round(70 + Math.random() * 20),
-              coachingStaff: Math.round(60 + Math.random() * 30)
+              teamChemistry: irnd(60, 85),
+              fanSatisfaction: teamOpp.fanBase + irnd(-15, 10),
+              mediaRating: irnd(40, 80),
+              facilityQuality: irnd(65, 90),
+              coachingStaff: irnd(50, 85),
+              socialMediaFollowers: irnd(500000, 5000000),
+              entertainmentRating: irnd(60, 85)
             },
-            roster: generateTeamRoster(position.team),
+            
+            roster: generateEnhancedTeamRoster(position.team),
+            
+            performance: {
+              wins: irnd(25, 55),
+              losses: 82 - irnd(25, 55),
+              playoffPosition: null,
+              championshipOdds: irnd(5, 25)
+            },
+            
             achievements: {
               seasonsOwned: 0,
               titlesWon: 0,
               playoffAppearances: 0,
-              totalWins: 0
-            }
+              totalWins: 0,
+              bestRecord: { wins: 0, losses: 82 },
+              awards: []
+            },
+            
+            history: [{
+              year: p.postRetirement.currentYear,
+              event: 'ownership_acquired',
+              description: `Purchased team for ${formatMoney(position.cost)}`
+            }]
           };
           
           // Calculate initial profit
@@ -3037,28 +3224,30 @@ export default function BasketballLife(){
           
           p.postRetirement.ownedTeams.push(newTeam);
           p.career.timeline.push(event("Business", `Purchased ${position.team} for ${formatMoney(position.cost)}`));
-          pushToast(`🏢 You now own the ${position.team}!`);
+          pushToast(`🏢 You are now the owner of the ${position.team}!`, 'success');
         } else {
           pushToast("Not enough money to purchase team");
           return p;
         }
       } else {
-        // Coaching/Management position
+        // Enhanced Coaching/Management position
         p.postRetirement.managedTeam = {
           team: position.team,
           role: position.type,
           salary: position.salary,
-          startSeason: p.season,
-          record: { wins: 0, losses: 0 },
+          startYear: p.postRetirement.currentYear,
+          contractLength: position.duration || '3 years',
+          record: { wins: 0, losses: 0, seasonsCoached: 0 },
           experience: 0,
           achievements: {
             titlesWon: 0,
             playoffAppearances: 0,
-            coachOfYearAwards: 0
+            coachOfYearAwards: 0,
+            winningSeasons: 0
           }
         };
         p.career.timeline.push(event("Management", `Accepted ${position.type} position with ${position.team}`));
-        pushToast(`🏀 Welcome to the ${position.team} organization!`);
+        pushToast(`🏀 Welcome to the ${position.team} organization!`, 'success');
       }
       
       // Remove accepted position from available
@@ -3068,8 +3257,8 @@ export default function BasketballLife(){
     });
   }
 
-  // Team ownership management functions
-  function manageTeamOwnership(teamIndex, action, value) {
+  // Enhanced Team Ownership Management System
+  function manageTeamOwnership(teamIndex, action, value, playerData = null) {
     setGame(prev => {
       const p = deepClone(prev);
       const team = p.postRetirement.ownedTeams[teamIndex];
@@ -3078,81 +3267,179 @@ export default function BasketballLife(){
       
       switch (action) {
         case 'adjust_ticket_prices':
-          const newPrice = Math.max(50, Math.min(500, value));
+          const newPrice = Math.max(30, Math.min(800, value));
           const priceChange = newPrice - team.finances.ticketPrices;
           team.finances.ticketPrices = newPrice;
           
-          // Attendance responds to price changes
-          const attendanceChange = -priceChange * 50; // 50 fans per $1 change
-          team.finances.attendance = Math.max(5000, Math.min(22000, team.finances.attendance + attendanceChange));
+          // Attendance responds to price changes and entertainment value
+          let attendanceMultiplier = 1.0;
+          if (team.operations.entertainmentRating > 80) attendanceMultiplier += 0.2;
+          if (team.operations.entertainmentRating < 50) attendanceMultiplier -= 0.3;
           
-          // Update revenue
+          const baseAttendanceChange = -priceChange * 30 * attendanceMultiplier;
+          team.finances.attendance = Math.max(8000, Math.min(22000, team.finances.attendance + baseAttendanceChange));
+          
           updateTeamRevenue(team);
-          pushToast(`Ticket prices set to $${newPrice}. Attendance: ${team.finances.attendance.toLocaleString()}`);
+          pushToast(`🎫 Ticket prices: $${newPrice}. Attendance: ${team.finances.attendance.toLocaleString()}`, 'info');
           break;
           
         case 'upgrade_facilities':
-          const upgradeCost = 500; // $500M
+          const upgradeCost = 800; // $800M major renovation
           if (p.cash >= upgradeCost) {
             p.cash -= upgradeCost;
-            team.operations.facilityQuality = Math.min(100, team.operations.facilityQuality + 15);
-            team.operations.fanSatisfaction = Math.min(100, team.operations.fanSatisfaction + 10);
-            team.currentValue += upgradeCost * 0.8; // 80% return on investment
-            pushToast("🏟️ Facilities upgraded! Fan satisfaction and team value increased.");
+            team.operations.facilityQuality = Math.min(100, team.operations.facilityQuality + 25);
+            team.operations.fanSatisfaction = Math.min(100, team.operations.fanSatisfaction + 15);
+            team.operations.entertainmentRating = Math.min(100, team.operations.entertainmentRating + 20);
+            team.currentValue += upgradeCost * 1.2; // 120% return on investment
+            team.finances.attendance = Math.min(22000, team.finances.attendance + 2500);
+            updateTeamRevenue(team);
+            pushToast("🏟️ Arena renovated! State-of-the-art facilities increase fan experience!", 'success');
           } else {
-            pushToast("Not enough money for facility upgrade");
+            pushToast(`Need ${formatMoney(upgradeCost)} for facility upgrade`, 'error');
           }
           break;
           
         case 'hire_coaching_staff':
-          const staffCost = 100; // $100M
+          const staffCost = 150; // $150M elite coaching staff
           if (p.cash >= staffCost) {
             p.cash -= staffCost;
-            team.operations.coachingStaff = Math.min(100, team.operations.coachingStaff + 20);
-            team.operations.teamChemistry = Math.min(100, team.operations.teamChemistry + 10);
-            team.finances.expenses += 20; // Increase annual expenses
-            pushToast("👨‍🏫 Elite coaching staff hired! Team chemistry improved.");
+            team.operations.coachingStaff = Math.min(100, team.operations.coachingStaff + 30);
+            team.operations.teamChemistry = Math.min(100, team.operations.teamChemistry + 20);
+            team.performance.championshipOdds = Math.min(90, team.performance.championshipOdds + 15);
+            team.finances.expenses += 25; // Increase annual expenses
+            updateTeamRevenue(team);
+            pushToast("👨‍🏫 Elite coaching staff hired! Championship odds improved!", 'success');
           } else {
-            pushToast("Not enough money to hire coaching staff");
+            pushToast(`Need ${formatMoney(staffCost)} for coaching staff`, 'error');
           }
           break;
           
         case 'marketing_campaign':
-          const marketingCost = 80; // $80M
+          const marketingCost = 120; // $120M comprehensive marketing
           if (p.cash >= marketingCost) {
             p.cash -= marketingCost;
-            team.operations.mediaRating = Math.min(100, team.operations.mediaRating + 15);
-            team.finances.merchandising += 20;
-            team.finances.attendance = Math.min(22000, team.finances.attendance + 2000);
-            updateTeamRevenue(team);
-            pushToast("📺 Marketing campaign launched! Media rating and attendance increased.");
-          } else {
-            pushToast("Not enough money for marketing campaign");
-          }
-          break;
-          
-        case 'trade_for_star':
-          const tradeCost = 200; // $200M luxury tax hit
-          if (p.cash >= tradeCost) {
-            p.cash -= tradeCost;
-            // Improve team by adding a star player
-            const starPlayer = generateStarPlayer();
-            team.roster.push(starPlayer);
-            team.operations.teamChemistry = Math.min(100, team.operations.teamChemistry + 25);
-            team.operations.fanSatisfaction = Math.min(100, team.operations.fanSatisfaction + 20);
+            team.operations.mediaRating = Math.min(100, team.operations.mediaRating + 25);
+            team.operations.socialMediaFollowers = Math.min(10000000, team.operations.socialMediaFollowers * 1.4);
+            team.finances.merchandising += 35;
+            team.finances.sponsorships += 25;
             team.finances.attendance = Math.min(22000, team.finances.attendance + 3000);
             updateTeamRevenue(team);
-            pushToast(`⭐ Traded for superstar ${starPlayer.name}! Team significantly improved.`);
+            pushToast("📺 Viral marketing campaign! Social media exploded!", 'success');
           } else {
-            pushToast("Not enough money for superstar trade");
+            pushToast(`Need ${formatMoney(marketingCost)} for marketing campaign`, 'error');
           }
           break;
           
-        case 'change_colors':
-          // Cosmetic change that boosts fan engagement
-          team.operations.fanSatisfaction = Math.min(100, team.operations.fanSatisfaction + 5);
-          team.finances.merchandising += 10;
-          pushToast("🎨 Team colors updated! Merchandise sales increased.");
+        case 'propose_trade':
+          if (!playerData || !playerData.targetPlayer || !playerData.offeredPlayers) {
+            pushToast("Invalid trade proposal", 'error');
+            break;
+          }
+          
+          const { targetPlayer, offeredPlayers, cashOffered } = playerData;
+          const tradeCost = cashOffered || 0;
+          const luxuryTaxPenalty = targetPlayer.salary > 30 ? 100 : 50; // $50-100M luxury tax
+          const totalCost = tradeCost + luxuryTaxPenalty;
+          
+          if (p.cash >= totalCost) {
+            // Calculate trade success probability
+            const tradeValue = evaluateTradeValue(
+              offeredPlayers.reduce((sum, player) => sum + player.overall, 0) / offeredPlayers.length,
+              targetPlayer,
+              cashOffered
+            );
+            
+            let successChance = 0.3; // Base 30%
+            if (tradeValue === 'Great Deal') successChance = 0.85;
+            else if (tradeValue === 'Good Deal') successChance = 0.65;
+            else if (tradeValue === 'Fair Deal') successChance = 0.45;
+            else if (tradeValue === 'Poor Deal') successChance = 0.25;
+            else successChance = 0.10;
+            
+            // Store pending trade
+            team.pendingTrade = {
+              targetPlayer,
+              offeredPlayers,
+              cashOffered,
+              successChance: Math.round(successChance * 100),
+              tradeValue,
+              cost: totalCost
+            };
+            
+            pushToast(`📋 Trade proposal: ${Math.round(successChance * 100)}% success chance (${tradeValue})`, 'info');
+          } else {
+            pushToast(`Need ${formatMoney(totalCost)} for this trade`, 'error');
+          }
+          break;
+          
+        case 'execute_trade':
+          if (team.pendingTrade) {
+            const trade = team.pendingTrade;
+            const success = chance(trade.successChance / 100);
+            
+            if (success && p.cash >= trade.cost) {
+              p.cash -= trade.cost;
+              
+              // Remove offered players from roster
+              trade.offeredPlayers.forEach(offeredPlayer => {
+                team.roster = team.roster.filter(player => player.name !== offeredPlayer.name);
+              });
+              
+              // Add target player to roster
+              team.roster.push(trade.targetPlayer);
+              
+              // Update team metrics
+              team.operations.teamChemistry = Math.max(40, team.operations.teamChemistry - 10 + irnd(-5, 15));
+              team.operations.fanSatisfaction = Math.min(100, team.operations.fanSatisfaction + 
+                (trade.targetPlayer.overall > 85 ? 20 : 10));
+              team.performance.championshipOdds = Math.min(90, team.performance.championshipOdds + 
+                (trade.targetPlayer.overall > 90 ? 20 : trade.targetPlayer.overall > 85 ? 15 : 10));
+              
+              updateTeamRevenue(team);
+              pushToast(`⭐ Trade successful! Acquired ${trade.targetPlayer.name}!`, 'success');
+            } else {
+              pushToast(p.cash < trade.cost ? "Insufficient funds" : "Trade rejected by other team", 'error');
+            }
+            
+            delete team.pendingTrade;
+          }
+          break;
+          
+        case 'social_media_boost':
+          const socialCost = 60; // $60M social media campaign
+          if (p.cash >= socialCost) {
+            p.cash -= socialCost;
+            team.operations.socialMediaFollowers = Math.min(15000000, team.operations.socialMediaFollowers * 1.6);
+            team.operations.entertainmentRating = Math.min(100, team.operations.entertainmentRating + 15);
+            team.finances.merchandising += 25;
+            updateTeamRevenue(team);
+            pushToast("📱 Viral social media content! Followers and engagement skyrocketed!", 'success');
+          } else {
+            pushToast(`Need ${formatMoney(socialCost)} for social media campaign`, 'error');
+          }
+          break;
+          
+        case 'sell_shares':
+          const sharePercentage = Math.min(value || 10, team.ownership);
+          const salePrice = Math.round((team.currentValue * sharePercentage) / 100);
+          
+          if (sharePercentage > 0 && team.ownership >= sharePercentage) {
+            team.ownership -= sharePercentage;
+            p.cash += salePrice;
+            
+            if (team.ownership <= 50) {
+              pushToast(`⚠️ Warning: You now own ${team.ownership}% (minority ownership)`, 'warning');
+            }
+            
+            pushToast(`💰 Sold ${sharePercentage}% for ${formatMoney(salePrice)}`, 'success');
+          } else {
+            pushToast("Invalid share percentage", 'error');
+          }
+          break;
+          
+        case 'advance_season':
+          // Simulate one season for owned team
+          simulateTeamSeason(team, p);
           break;
       }
       
@@ -3160,30 +3447,142 @@ export default function BasketballLife(){
     });
   }
   
+  function simulateTeamSeason(team, player) {
+    // Calculate team performance based on roster strength and management decisions
+    const rosterStrength = team.roster.reduce((sum, player) => sum + player.overall, 0) / team.roster.length;
+    const managementBonus = (team.operations.coachingStaff + team.operations.facilityQuality + team.operations.teamChemistry) / 15;
+    
+    const expectedWins = Math.round(20 + ((rosterStrength + managementBonus - 60) * 0.8));
+    const actualWins = Math.max(15, Math.min(70, expectedWins + irnd(-12, 12)));
+    const actualLosses = 82 - actualWins;
+    
+    // Update team performance
+    team.performance.wins = actualWins;
+    team.performance.losses = actualLosses;
+    team.achievements.seasonsOwned++;
+    team.achievements.totalWins += actualWins;
+    
+    // Check for playoff appearance
+    if (actualWins >= 42) {
+      team.achievements.playoffAppearances++;
+      team.performance.playoffPosition = actualWins >= 50 ? 'High Seed' : 'Low Seed';
+      
+      // Championship check
+      if (actualWins >= 60 && chance(team.performance.championshipOdds / 100)) {
+        team.achievements.titlesWon++;
+        team.achievements.awards.push(`${player.postRetirement.currentYear} NBA Championship`);
+        pushToast(`� CHAMPIONSHIP! Your ${team.team} won the NBA title!`, 'success');
+      }
+    } else {
+      team.performance.playoffPosition = null;
+    }
+    
+    // Update best record
+    if (actualWins > team.achievements.bestRecord.wins) {
+      team.achievements.bestRecord = { wins: actualWins, losses: actualLosses };
+    }
+    
+    // Financial impact of season performance
+    const performanceMultiplier = 1 + ((actualWins - 41) * 0.02); // 2% per win above .500
+    team.finances.revenue = Math.round(team.finances.revenue * performanceMultiplier);
+    team.finances.attendance = Math.round(team.finances.attendance * performanceMultiplier);
+    
+    // Update team value based on performance and years owned
+    const valueIncrease = (actualWins > 45 ? 150 : actualWins > 35 ? 50 : -50) + 
+                         (team.achievements.titlesWon * 500) + 
+                         (team.achievements.seasonsOwned * 25);
+    team.currentValue = Math.max(team.currentValue + valueIncrease, team.purchasePrice * 0.8);
+    
+    // Add season to history
+    team.history.push({
+      year: player.postRetirement.currentYear,
+      event: 'season_completed',
+      wins: actualWins,
+      losses: actualLosses,
+      playoffs: actualWins >= 42,
+      championship: team.achievements.titlesWon > 0 && actualWins >= 60,
+      description: `${actualWins}-${actualLosses} record${actualWins >= 42 ? ', made playoffs' : ''}`
+    });
+    
+    // Advance year
+    player.postRetirement.currentYear++;
+    
+    updateTeamRevenue(team);
+    pushToast(`📅 Season completed: ${actualWins}-${actualLosses} record`, 'info');
+  }
+  
   function updateTeamRevenue(team) {
-    // Recalculate revenue based on current metrics
-    const baseRevenue = 200;
+    // Enhanced revenue calculation
+    const baseRevenue = 180; // $180M base
     const ticketRevenue = (team.finances.ticketPrices * team.finances.attendance * 41) / 1000000; // 41 home games
     const merchandisingRevenue = team.finances.merchandising;
     const sponsorshipRevenue = team.finances.sponsorships;
     const tvRevenue = team.finances.tvDeals;
+    const socialMediaRevenue = (team.operations.socialMediaFollowers / 1000000) * 5; // $5M per million followers
     
-    team.finances.revenue = Math.round(baseRevenue + ticketRevenue + merchandisingRevenue + sponsorshipRevenue + tvRevenue);
+    team.finances.revenue = Math.round(baseRevenue + ticketRevenue + merchandisingRevenue + 
+                                     sponsorshipRevenue + tvRevenue + socialMediaRevenue);
     team.finances.profit = team.finances.revenue - team.finances.expenses;
   }
   
-  function generateTeamRoster(teamName) {
+  function generateEnhancedTeamRoster(teamName) {
     const roster = [];
-    for (let i = 0; i < 12; i++) {
-      roster.push({
-        name: `${pick(['James', 'Michael', 'John', 'David', 'Chris', 'Kevin', 'Paul', 'Mark', 'Jason', 'Anthony'])} ${pick(['Johnson', 'Williams', 'Brown', 'Jones', 'Miller', 'Davis', 'Garcia', 'Rodriguez', 'Wilson', 'Martinez'])}`,
-        position: pick(['PG', 'SG', 'SF', 'PF', 'C']),
-        overall: Math.round(60 + Math.random() * 30),
-        salary: Math.round(5 + Math.random() * 20), // $5-25M
-        age: Math.round(20 + Math.random() * 15)
-      });
+    const positions = ['PG', 'SG', 'SF', 'PF', 'C'];
+    
+    // Generate 15 players (standard NBA roster)
+    for (let i = 0; i < 15; i++) {
+      const isStar = i < 2 && chance(0.7); // 70% chance top 2 players are stars
+      const isStarter = i < 5; // First 5 are starters
+      
+      const player = {
+        name: `${pick(['James', 'Michael', 'John', 'David', 'Chris', 'Kevin', 'Paul', 'Mark', 'Jason', 'Anthony', 'Stephen', 'Kawhi', 'Giannis', 'Luka', 'Jayson', 'Damian', 'Russell', 'Jimmy', 'Joel', 'Nikola'])} ${pick(['Johnson', 'Williams', 'Brown', 'Jones', 'Miller', 'Davis', 'Garcia', 'Rodriguez', 'Wilson', 'Martinez', 'Thompson', 'Anderson', 'Taylor', 'Thomas', 'Jackson', 'White', 'Harris', 'Martin', 'Robinson', 'Lewis'])}`,
+        position: pick(positions),
+        overall: isStar ? irnd(85, 95) : isStarter ? irnd(75, 84) : irnd(60, 78),
+        age: irnd(20, 35),
+        yearsInLeague: irnd(1, 15),
+        contractYear: irnd(1, 4),
+        contractLength: irnd(2, 5),
+        salary: 0, // Will be calculated based on overall
+        tradeable: chance(0.6), // 60% of players are tradeable
+        morale: irnd(60, 95),
+        chemistry: irnd(50, 90),
+        injuryStatus: chance(0.05) ? 'injured' : 'healthy',
+        stats: {
+          ppg: 0, rpg: 0, apg: 0, fgPct: 0, tpPct: 0, ftPct: 0
+        }
+      };
+      
+      // Calculate salary based on overall rating and years in league
+      if (player.overall >= 90) {
+        player.salary = irnd(35, 50); // Superstar: $35-50M
+      } else if (player.overall >= 85) {
+        player.salary = irnd(25, 35); // Star: $25-35M
+      } else if (player.overall >= 80) {
+        player.salary = irnd(15, 25); // Starter: $15-25M
+      } else if (player.overall >= 75) {
+        player.salary = irnd(8, 15); // Role player: $8-15M
+      } else {
+        player.salary = irnd(2, 8); // Bench/rookie: $2-8M
+      }
+      
+      // Generate basic stats based on overall
+      const statMultiplier = player.overall / 80;
+      player.stats.ppg = Math.round((irnd(8, 25) * statMultiplier) * 10) / 10;
+      player.stats.rpg = Math.round((irnd(3, 12) * statMultiplier) * 10) / 10;
+      player.stats.apg = Math.round((irnd(2, 10) * statMultiplier) * 10) / 10;
+      player.stats.fgPct = Math.round((0.40 + (statMultiplier * 0.15)) * 1000) / 1000;
+      player.stats.tpPct = Math.round((0.30 + (statMultiplier * 0.15)) * 1000) / 1000;
+      player.stats.ftPct = Math.round((0.70 + (statMultiplier * 0.20)) * 1000) / 1000;
+      
+      roster.push(player);
     }
-    return roster;
+    
+    return roster.sort((a, b) => b.overall - a.overall); // Sort by overall rating
+  }
+  
+  function generateTeamRoster(teamName) {
+    // Legacy function for backwards compatibility
+    return generateEnhancedTeamRoster(teamName).slice(0, 12);
   }
   
   function generateStarPlayer() {
@@ -3215,6 +3614,64 @@ export default function BasketballLife(){
     }
     
     return { wins, losses, madePlayoffs: wins >= 50 };
+  }
+
+  // Enhanced time progression for post-retirement phase
+  function advancePostRetirementYear() {
+    setGame(prev => {
+      const p = deepClone(prev);
+      
+      if (!p.postRetirement || p.postRetirement.phase !== 'management') {
+        pushToast("Only available in management phase", 'error');
+        return p;
+      }
+      
+      // Advance year
+      p.postRetirement.currentYear++;
+      
+      // Age the player
+      const currentAge = getCurrentAge(p.postRetirement.birthYear, p.season);
+      
+      // Simulate all owned teams
+      if (p.postRetirement.ownedTeams?.length > 0) {
+        p.postRetirement.ownedTeams.forEach(team => {
+          simulateTeamSeason(team, p);
+        });
+      }
+      
+      // Simulate coaching career if applicable
+      if (p.postRetirement.managedTeam) {
+        const result = simulateCoachingSeason(p.postRetirement.managedTeam);
+        p.cash += p.postRetirement.managedTeam.salary; // Annual salary
+        pushToast(`Coaching season: ${result.wins}-${result.losses} record`, 'info');
+      }
+      
+      // Generate new business opportunities
+      if (chance(0.3)) { // 30% chance of new opportunities
+        const newOpportunities = generateManagementOpportunities(p);
+        p.postRetirement.availablePositions.push(...newOpportunities.slice(0, 2));
+      }
+      
+      // Annual financial updates for team owners
+      if (p.postRetirement.ownedTeams?.length > 0) {
+        let totalProfit = 0;
+        p.postRetirement.ownedTeams.forEach(team => {
+          totalProfit += team.finances.profit;
+        });
+        
+        if (totalProfit > 0) {
+          p.cash += totalProfit;
+          pushToast(`🏢 Annual team profits: ${formatMoney(totalProfit)}`, 'success');
+        } else {
+          p.cash += totalProfit; // This will subtract if negative
+          pushToast(`📉 Annual team losses: ${formatMoney(Math.abs(totalProfit))}`, 'warning');
+        }
+      }
+      
+      p.career.timeline.push(event("Management", `Year ${p.postRetirement.currentYear} completed`));
+      
+      return p;
+    });
   }
 
   function exportSave(){
@@ -6484,6 +6941,197 @@ function ManagementOpportunitiesPanel({ game, onAcceptPosition }) {
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Enhanced Trade Modal Component
+function TradeModal({ team, teamIndex, onClose, onExecuteTrade }) {
+  const [selectedPlayerOut, setSelectedPlayerOut] = useState(null);
+  const [selectedPlayerIn, setSelectedPlayerIn] = useState(null);
+  const [cashOffered, setCashOffered] = useState(0);
+  
+  // Generate available players from other teams
+  const availableTargets = [
+    { name: 'LeBron James', overall: 92, age: 39, salary: 47, position: 'SF', team: 'Lakers' },
+    { name: 'Stephen Curry', overall: 90, age: 36, salary: 51, position: 'PG', team: 'Warriors' },
+    { name: 'Giannis Antetokounmpo', overall: 95, age: 29, salary: 48, position: 'PF', team: 'Bucks' },
+    { name: 'Luka Dončić', overall: 93, age: 25, salary: 40, position: 'PG', team: 'Mavericks' },
+    { name: 'Jayson Tatum', overall: 91, age: 26, salary: 46, position: 'SF', team: 'Celtics' },
+    { name: 'Kevin Durant', overall: 89, age: 35, salary: 47, position: 'SF', team: 'Suns' },
+    { name: 'Nikola Jokić', overall: 94, age: 29, salary: 47, position: 'C', team: 'Nuggets' },
+    { name: 'Joel Embiid', overall: 92, age: 30, salary: 47, position: 'C', team: '76ers' }
+  ];
+  
+  const getTradeEvaluation = () => {
+    if (!selectedPlayerOut || !selectedPlayerIn) return null;
+    
+    const ourValue = selectedPlayerOut.overall + (selectedPlayerOut.age < 30 ? 5 : -5);
+    const theirValue = selectedPlayerIn.overall + (selectedPlayerIn.age < 30 ? 5 : -5);
+    const cashValue = cashOffered / 10;
+    
+    const totalOur = ourValue + cashValue;
+    const ratio = totalOur / theirValue;
+    
+    let evaluation, successChance, color;
+    if (ratio > 1.2) {
+      evaluation = 'Great Deal'; successChance = 85; color = '#10b981';
+    } else if (ratio > 1.1) {
+      evaluation = 'Good Deal'; successChance = 65; color = '#10b981';
+    } else if (ratio > 0.9) {
+      evaluation = 'Fair Deal'; successChance = 45; color = '#f59e0b';
+    } else if (ratio > 0.8) {
+      evaluation = 'Poor Deal'; successChance = 25; color = '#ef4444';
+    } else {
+      evaluation = 'Terrible Deal'; successChance = 10; color = '#ef4444';
+    }
+    
+    return { evaluation, successChance, color };
+  };
+  
+  const tradeEval = getTradeEvaluation();
+  
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+      <div className="panel panel-content w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem'}}>
+          <h3 style={{fontSize: '1.8rem'}}>⭐ Superstar Trade Center</h3>
+          <button className="btn btn-ghost" onClick={onClose}>✕</button>
+        </div>
+        
+        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '2rem'}}>
+          {/* Your Players */}
+          <div>
+            <h4>👥 Your Roster</h4>
+            <div style={{maxHeight: '300px', overflowY: 'auto', border: '1px solid var(--border-primary)', borderRadius: '0.5rem', padding: '1rem'}}>
+              {team.roster.map((player, index) => (
+                <div 
+                  key={index}
+                  className={`player-card ${selectedPlayerOut === player ? 'selected' : ''}`}
+                  onClick={() => setSelectedPlayerOut(player)}
+                  style={{
+                    padding: '0.75rem',
+                    margin: '0.5rem 0',
+                    border: '1px solid var(--border-primary)',
+                    borderRadius: '0.5rem',
+                    cursor: 'pointer',
+                    background: selectedPlayerOut === player ? 'rgba(59,130,246,0.2)' : 'var(--bg-secondary)'
+                  }}
+                >
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                    <div>
+                      <div style={{fontWeight: 'bold'}}>{player.name}</div>
+                      <div style={{fontSize: '0.9rem', opacity: 0.8}}>{player.position} • {player.overall} OVR • Age {player.age}</div>
+                    </div>
+                    <div style={{textAlign: 'right'}}>
+                      <div style={{fontWeight: 'bold', color: '#10b981'}}>{formatMoney(player.salary)}</div>
+                      <div style={{fontSize: '0.8rem', opacity: 0.7}}>
+                        {player.tradeable ? '✅ Available' : '❌ Untradeable'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {/* Available Targets */}
+          <div>
+            <h4>🌟 Available Superstars</h4>
+            <div style={{maxHeight: '300px', overflowY: 'auto', border: '1px solid var(--border-primary)', borderRadius: '0.5rem', padding: '1rem'}}>
+              {availableTargets.map((player, index) => (
+                <div 
+                  key={index}
+                  className={`player-card ${selectedPlayerIn === player ? 'selected' : ''}`}
+                  onClick={() => setSelectedPlayerIn(player)}
+                  style={{
+                    padding: '0.75rem',
+                    margin: '0.5rem 0',
+                    border: '1px solid var(--border-primary)',
+                    borderRadius: '0.5rem',
+                    cursor: 'pointer',
+                    background: selectedPlayerIn === player ? 'rgba(34,197,94,0.2)' : 'var(--bg-secondary)'
+                  }}
+                >
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                    <div>
+                      <div style={{fontWeight: 'bold'}}>{player.name}</div>
+                      <div style={{fontSize: '0.9rem', opacity: 0.8}}>{player.position} • {player.overall} OVR • Age {player.age}</div>
+                      <div style={{fontSize: '0.8rem', opacity: 0.6}}>{player.team}</div>
+                    </div>
+                    <div style={{textAlign: 'right'}}>
+                      <div style={{fontWeight: 'bold', color: '#ef4444'}}>{formatMoney(player.salary)}</div>
+                      <div style={{fontSize: '0.8rem', opacity: 0.7}}>per year</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        
+        {/* Cash Component */}
+        <div style={{marginBottom: '2rem'}}>
+          <h4>💰 Cash Sweetener</h4>
+          <div style={{display: 'flex', gap: '1rem', alignItems: 'center'}}>
+            <span>Add cash to deal:</span>
+            <input 
+              type="range" 
+              min="0" 
+              max="200" 
+              value={cashOffered}
+              onChange={(e) => setCashOffered(Number(e.target.value))}
+              style={{flex: 1}}
+            />
+            <span style={{minWidth: '100px', fontWeight: 'bold'}}>{formatMoney(cashOffered)}</span>
+          </div>
+        </div>
+        
+        {/* Trade Evaluation */}
+        {tradeEval && selectedPlayerOut && selectedPlayerIn && (
+          <div style={{padding: '1.5rem', background: 'rgba(255,255,255,0.05)', borderRadius: '1rem', marginBottom: '2rem', border: `2px solid ${tradeEval.color}`}}>
+            <h4>📊 Trade Analysis</h4>
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginTop: '1rem'}}>
+              <div>
+                <div style={{fontWeight: 'bold'}}>Trade Evaluation</div>
+                <div style={{color: tradeEval.color, fontSize: '1.2rem', fontWeight: 'bold'}}>{tradeEval.evaluation}</div>
+              </div>
+              <div>
+                <div style={{fontWeight: 'bold'}}>Success Probability</div>
+                <div style={{color: tradeEval.color, fontSize: '1.2rem', fontWeight: 'bold'}}>{tradeEval.successChance}%</div>
+              </div>
+              <div>
+                <div style={{fontWeight: 'bold'}}>Total Cost</div>
+                <div style={{fontSize: '1.2rem', fontWeight: 'bold'}}>{formatMoney(cashOffered + (selectedPlayerIn.salary > 30 ? 100 : 50))}</div>
+              </div>
+            </div>
+            <div style={{marginTop: '1rem', fontSize: '0.9rem', opacity: 0.8}}>
+              Trading {selectedPlayerOut.name} + {formatMoney(cashOffered)} for {selectedPlayerIn.name}
+            </div>
+          </div>
+        )}
+        
+        {/* Actions */}
+        <div style={{display: 'flex', gap: '1rem', justifyContent: 'end'}}>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button 
+            className="btn btn-primary"
+            onClick={() => {
+              if (selectedPlayerOut && selectedPlayerIn) {
+                onExecuteTrade(teamIndex, 'propose_trade', null, {
+                  targetPlayer: selectedPlayerIn,
+                  offeredPlayers: [selectedPlayerOut],
+                  cashOffered: cashOffered
+                });
+                onClose();
+              }
+            }}
+            disabled={!selectedPlayerOut || !selectedPlayerIn}
+          >
+            Propose Trade
+          </button>
+        </div>
       </div>
     </div>
   );
