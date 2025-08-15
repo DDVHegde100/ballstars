@@ -7,7 +7,23 @@ const rnd = (min = 0, max = 1) => Math.random() * (max - min) + min;
 const irnd = (min, max) => Math.floor(rnd(min, max + 1));
 const chance = (p) => Math.random() < p; // p in [0,1]
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-const deepClone = (obj) => JSON.parse(JSON.stringify(obj));
+const deepClone = (obj) => {
+  const cloned = JSON.parse(JSON.stringify(obj));
+  // Protect against NaN and corrupted money values
+  if (cloned && typeof cloned.cash === 'number' && (isNaN(cloned.cash) || cloned.cash < 0)) {
+    cloned.cash = 0;
+  }
+  return cloned;
+};
+
+// Money validation function
+const validateMoney = (player) => {
+  if (!player) return player;
+  if (isNaN(player.cash) || player.cash < 0) {
+    player.cash = 0;
+  }
+  return player;
+};
 const fmt = (n, d = 1) => Number(n).toFixed(d);
 const sum = (arr) => arr.reduce((a, b) => a + b, 0);
 
@@ -343,6 +359,60 @@ const LAST_NAMES = [
 const POSITIONS = ["PG","SG","SF","PF","C"];
 const SKILLS = ["shooting","finishing","defense","playmaking","rebounding","athleticism"];
 
+// Life Activities and Investments
+const LIFE_ACTIVITIES = [
+  { id: 'dating', name: 'Go on Dates', cost: 5, moraleBoost: 8, fameBoost: 2, duration: 1 },
+  { id: 'charity', name: 'Charity Work', cost: 20, moraleBoost: 15, fameBoost: 10, followersBoost: 8000, duration: 2 },
+  { id: 'mentoring', name: 'Youth Mentoring', cost: 10, moraleBoost: 12, fameBoost: 8, followersBoost: 5000, duration: 3 },
+  { id: 'business', name: 'Business Meeting', cost: 25, netWorthBoost: 50, duration: 1 },
+  { id: 'vacation', name: 'Vacation', cost: 100, moraleBoost: 25, peakBoost: 15, duration: 5 },
+  { id: 'family', name: 'Family Time', cost: 8, moraleBoost: 20, duration: 1 }
+];
+
+const INVESTMENT_OPTIONS = [
+  { id: 'stocks', name: 'Stock Portfolio', cost: 200, riskLevel: 'medium', returnRate: 0.08, duration: 10 },
+  { id: 'realestate', name: 'Real Estate', cost: 500, riskLevel: 'low', returnRate: 0.12, duration: 20 },
+  { id: 'restaurant', name: 'Restaurant Chain', cost: 800, riskLevel: 'high', returnRate: 0.20, duration: 15 },
+  { id: 'tech', name: 'Tech Startup', cost: 300, riskLevel: 'high', returnRate: 0.25, duration: 8 },
+  { id: 'sports', name: 'Sports Franchise', cost: 2000, riskLevel: 'low', returnRate: 0.15, duration: 30 }
+];
+
+// Enhanced Social Media Challenges and Content
+const SOCIAL_MEDIA_CHALLENGES = [
+  {
+    id: 'workout', name: 'Workout Challenge', difficulty: 'easy',
+    requirements: { overall: 70 }, rewards: { followers: 15000, fame: 5 },
+    content: 'Post your training routine and inspire fans!'
+  },
+  {
+    id: 'charity_drive', name: 'Charity Drive', difficulty: 'medium',
+    requirements: { overall: 75, fame: 30 }, rewards: { followers: 25000, fame: 12, morale: 10 },
+    content: 'Organize a charity event and show your community spirit!'
+  },
+  {
+    id: 'signature_move', name: 'Signature Move', difficulty: 'hard',
+    requirements: { overall: 85, skillRating: 80 }, rewards: { followers: 40000, fame: 20 },
+    content: 'Showcase your best basketball move in a creative video!'
+  },
+  {
+    id: 'collaboration', name: 'Celebrity Collab', difficulty: 'expert',
+    requirements: { overall: 90, fame: 70 }, rewards: { followers: 100000, fame: 35 },
+    content: 'Collaborate with a major celebrity for massive reach!'
+  }
+];
+
+// Relationship system
+const DATING_POOL = [
+  { name: 'Alex Rivera', profession: 'Model', appeal: 85, fameRequirement: 20 },
+  { name: 'Jordan Kim', profession: 'Actress', appeal: 90, fameRequirement: 40 },
+  { name: 'Taylor Johnson', profession: 'Musician', appeal: 88, fameRequirement: 35 },
+  { name: 'Morgan Davis', profession: 'Entrepreneur', appeal: 82, fameRequirement: 25 },
+  { name: 'Casey Brown', profession: 'Athlete', appeal: 87, fameRequirement: 30 }
+];
+
+// Championship winners tracking
+const CHAMPIONSHIP_WINNERS = {};
+
 const NBA_TEAMS = {
   "Lakers": { 
     name: "Los Angeles Lakers", 
@@ -592,15 +662,26 @@ function rookieContract(overall){
 
 // ---------- Core Models ----------
 function newPlayer(custom){
-  const name = custom?.name || genName();
+  const firstName = custom?.firstName || pick(FIRST_NAMES);
+  const lastName = custom?.lastName || pick(LAST_NAMES);
   const age = custom?.age || startingAge();
   const arch = custom?.archetype || pickArchetype();
   const ratings = baseRatings(arch);
   const rookie = rookieContract(ratings.overall);
+  const appearance = generateAppearance();
+  
   return {
-    name, age, archetype: arch, ratings, potential: clamp(ratings.overall + irnd(4,15), 70, 99),
+    firstName, lastName, age, archetype: arch, ratings, potential: clamp(ratings.overall + irnd(4,15), 70, 99),
+    appearance, // New player appearance
     morale: 70, health: 100, peak: 90, fame: 5, followers: irnd(1000, 5000), cash: 50, 
     endorsements: [], shoeDeals: [], premiumServices: [],
+    // New life features
+    relationships: { girlfriend: null, relationshipLevel: 0 },
+    investments: [],
+    lifestyleActivities: [],
+    socialMediaChallenges: [],
+    teamChemistry: irnd(40,75),
+    // End new features
     team: rookie.team, arena: genArena(rookie.team), jersey: irnd(0,99),
     contract: { ...rookie, year: 1 },
     season: 1, week: 1, phase: "Preseason", // Preseason, Regular, Playoffs, Offseason
@@ -752,97 +833,129 @@ function playerGameSim(p){
   const healthFactor = p.health / 100;
   const ageMultiplier = getAgeMultiplier(p.age);
   
-  // High-rated players get more consistency in minutes and performance
-  const consistencyFactor = p.ratings.overall >= 90 ? 1.2 : 
-                           p.ratings.overall >= 85 ? 1.1 : 
-                           p.ratings.overall >= 80 ? 1.05 : 1.0;
+  // Elite players get MASSIVE consistency bonuses and dominance
+  const consistencyFactor = p.ratings.overall >= 95 ? 1.8 : // Elite superstars dominate
+                           p.ratings.overall >= 90 ? 1.5 : // Stars are very consistent
+                           p.ratings.overall >= 85 ? 1.3 : // Great players are consistent  
+                           p.ratings.overall >= 80 ? 1.15 : // Good players
+                           1.0; // Average players
   
-  // More realistic minutes calculation with better consistency for stars
-  const minsVariance = p.ratings.overall >= 85 ? 6 : 8; // Less variance for better players
-  const mins = clamp(18 + irnd(-3, minsVariance) + Math.round((p.ratings.overall-70)/5) + Math.round(peakFactor * 6) - Math.round((100-p.health)/15), 8, 40);
+  // Elite skill bonuses - each high skill adds significant performance
+  const eliteShootingBonus = p.ratings.shooting >= 95 ? 1.4 : p.ratings.shooting >= 90 ? 1.2 : 1.0;
+  const eliteFinishingBonus = p.ratings.finishing >= 95 ? 1.3 : p.ratings.finishing >= 90 ? 1.15 : 1.0;
+  const elitePlaymakingBonus = p.ratings.playmaking >= 95 ? 1.35 : p.ratings.playmaking >= 90 ? 1.2 : 1.0;
   
-  // More conservative usage calculation with star bonus
-  const usageBase = 0.16 + (p.ratings.overall-60)/100 * 0.18; // Max ~34% usage for 100 OVR
-  const starUsageBonus = p.ratings.overall >= 90 ? 0.02 : p.ratings.overall >= 85 ? 0.01 : 0;
-  const usage = clamp(usageBase + starUsageBonus + (p.ratings.shooting + p.ratings.finishing)/300 * 0.08 + rnd(-0.02, 0.02), 0.12, 0.35);
+  // Star players get better minutes and usage
+  const starMinutesBonus = p.ratings.overall >= 95 ? 8 : p.ratings.overall >= 90 ? 6 : p.ratings.overall >= 85 ? 4 : 0;
+  const minsVariance = p.ratings.overall >= 90 ? 3 : p.ratings.overall >= 85 ? 4 : 6; // Much less variance for stars
+  const mins = clamp(22 + starMinutesBonus + irnd(-2, minsVariance) + Math.round((p.ratings.overall-70)/4) + Math.round(peakFactor * 4) - Math.round((100-p.health)/20), 12, 42);
   
-  // Shot attempts with consistency for high-rated players
-  const shotsBase = Math.max(3, Math.round(mins * 0.7 * usage));
+  // Enhanced usage for elite players - but more realistic
+  const usageBase = 0.16 + (p.ratings.overall-60)/100 * 0.18; // More conservative usage
+  const starUsageBonus = p.ratings.overall >= 95 ? 0.04 : p.ratings.overall >= 90 ? 0.03 : p.ratings.overall >= 85 ? 0.02 : 0;
+  const usage = clamp(usageBase + starUsageBonus + (p.ratings.shooting + p.ratings.finishing + p.ratings.playmaking)/400 * 0.08 + rnd(-0.015, 0.015), 0.15, 0.38);
   
-  // Enhanced efficiency scaling for high-rated players
-  let efficiencyMultiplier = 0.8; // Start lower
+  // More realistic shot attempts for elite players
+  const shotsBase = Math.max(4, Math.round(mins * 0.75 * usage)); // Reduced shot rate
   
-  // Better scaling for high overall ratings with consistency
-  if (p.ratings.overall >= 95) {
-    efficiencyMultiplier += 0.18; // Elite players get better consistency
-  } else if (p.ratings.overall >= 90) {
-    efficiencyMultiplier += 0.15; // Stars get good consistency  
+  // REALISTIC efficiency for elite players - toned down significantly
+  let efficiencyMultiplier = 0.88; // Better starting point but not crazy
+  
+  // Much more realistic elite overall rating scaling
+  if (p.ratings.overall >= 98) {
+    efficiencyMultiplier += 0.18; // Generational talents but realistic
+  } else if (p.ratings.overall >= 95) {
+    efficiencyMultiplier += 0.15; // Elite superstars
+  } else if (p.ratings.overall >= 92) {
+    efficiencyMultiplier += 0.12; // Superstars
+  } else if (p.ratings.overall >= 88) {
+    efficiencyMultiplier += 0.10; // All-NBA level
   } else if (p.ratings.overall >= 85) {
-    efficiencyMultiplier += 0.12; // Above average players
+    efficiencyMultiplier += 0.08; // All-Star level
   } else if (p.ratings.overall >= 80) {
-    efficiencyMultiplier += 0.08; // Good players
+    efficiencyMultiplier += 0.06; // Starter level
   } else if (p.ratings.overall >= 75) {
-    efficiencyMultiplier += 0.04; // Average players
+    efficiencyMultiplier += 0.04; // Role player
   }
   
-  // Enhanced skill effects for high-rated players
-  const shootingEffect = Math.max(0, (p.ratings.shooting - 75) / 100 * 0.1);
-  const finishingEffect = Math.max(0, (p.ratings.finishing - 75) / 100 * 0.1);
+  // Individual skill mastery bonuses - much more realistic
+  const shootingEffect = Math.max(0, (p.ratings.shooting - 75) / 100 * 0.12 * eliteShootingBonus);
+  const finishingEffect = Math.max(0, (p.ratings.finishing - 75) / 100 * 0.10 * eliteFinishingBonus);
+  const playmakingEffect = Math.max(0, (p.ratings.playmaking - 75) / 100 * 0.08 * elitePlaymakingBonus);
   
-  // Condition impact with star player resilience
-  const conditionPenalty = p.ratings.overall >= 85 ? 0.8 : 1.0; // Stars handle fatigue better
-  efficiencyMultiplier += (peakFactor - 0.5) * 0.12 * conditionPenalty;
-  efficiencyMultiplier += (healthFactor - 0.5) * 0.10 * conditionPenalty;
-  efficiencyMultiplier += shootingEffect + finishingEffect;
+  // Elite players handle conditions better
+  const conditionPenalty = p.ratings.overall >= 90 ? 0.6 : p.ratings.overall >= 85 ? 0.75 : 1.0;
+  efficiencyMultiplier += (peakFactor - 0.5) * 0.15 * conditionPenalty;
+  efficiencyMultiplier += (healthFactor - 0.5) * 0.12 * conditionPenalty;
+  efficiencyMultiplier += shootingEffect + finishingEffect + playmakingEffect;
   
-  // Age effects with star longevity
+  // Age effects with superstar longevity
   if (p.age >= 30) {
-    const experienceBonus = p.ratings.overall >= 85 ? 0.04 : 0.03; // Stars get more from experience
-    efficiencyMultiplier += Math.min(experienceBonus, (p.age - 30) * 0.007);
-    const agePenalty = p.ratings.overall >= 90 ? 0.01 : 0.015; // Stars age better
+    const experienceBonus = p.ratings.overall >= 90 ? 0.06 : p.ratings.overall >= 85 ? 0.04 : 0.03;
+    efficiencyMultiplier += Math.min(experienceBonus, (p.age - 30) * 0.01);
+    const agePenalty = p.ratings.overall >= 95 ? 0.008 : p.ratings.overall >= 90 ? 0.012 : 0.018;
     efficiencyMultiplier -= Math.max(0, (p.age - 33) * agePenalty);
   }
   
-  // Apply consistency factor to reduce variance for stars
-  const shots = Math.round(shotsBase * Math.max(0.6, efficiencyMultiplier * consistencyFactor));
+  // Apply all bonuses
+  const shots = Math.round(shotsBase * Math.max(0.7, efficiencyMultiplier * consistencyFactor));
   
-  // Three-point rates with star player intelligence
-  const threeRateBase = 0.25 + Math.max(0, (p.ratings.shooting-70)/100 * 0.20);
-  const smartShooting = p.ratings.overall >= 85 ? 0.02 : 0; // Stars take better shots
-  const threeRate = clamp(threeRateBase + smartShooting + rnd(-0.04, 0.04), 0.15, 0.45);
+  // Elite three-point shooting and shot selection
+  const threeRateBase = 0.28 + Math.max(0, (p.ratings.shooting-70)/100 * 0.25);
+  const smartShooting = p.ratings.overall >= 90 ? 0.04 : p.ratings.overall >= 85 ? 0.02 : 0;
+  const threeRate = clamp(threeRateBase + smartShooting + rnd(-0.03, 0.03), 0.18, 0.50);
   const threes = Math.round(shots * threeRate);
   const twos = Math.max(0, shots - threes);
 
-  // Enhanced shooting percentages with better consistency for high-rated players
-  const shootingBonus = p.ratings.shooting >= 95 ? 0.05 : 
-                       p.ratings.shooting >= 90 ? 0.04 : 
+  // REALISTIC shooting percentages with reasonable bonuses for high ratings
+  const shootingBonus = p.ratings.shooting >= 98 ? 0.08 : 
+                       p.ratings.shooting >= 95 ? 0.06 : 
+                       p.ratings.shooting >= 92 ? 0.05 : 
+                       p.ratings.shooting >= 88 ? 0.04 : 
                        p.ratings.shooting >= 85 ? 0.03 : 
                        p.ratings.shooting >= 80 ? 0.02 : 0;
-  const finishingBonus = p.ratings.finishing >= 95 ? 0.04 : 
-                        p.ratings.finishing >= 90 ? 0.03 : 
+                       
+  const finishingBonus = p.ratings.finishing >= 98 ? 0.06 : 
+                        p.ratings.finishing >= 95 ? 0.05 : 
+                        p.ratings.finishing >= 92 ? 0.04 : 
+                        p.ratings.finishing >= 88 ? 0.03 : 
                         p.ratings.finishing >= 85 ? 0.02 : 
-                        p.ratings.finishing >= 80 ? 0.01 : 0;
+                        p.ratings.finishing >= 80 ? 0.015 : 0;
   
-  // Reduced variance for high-rated players
-  const variance = p.ratings.overall >= 85 ? 0.03 : 0.05;
+  // Realistic variance - less for elite players but not zero
+  const variance = p.ratings.overall >= 95 ? 0.025 : p.ratings.overall >= 90 ? 0.03 : p.ratings.overall >= 85 ? 0.035 : 0.045;
   
-  // Better shooting percentage ranges with consistency
-  const fg2Pct = clamp(0.45 + (p.ratings.finishing-70)/100 * 0.18 + finishingBonus + (healthFactor-0.5)*0.04 + rnd(-variance, variance), 0.38, 0.65);
-  const fg3Pct = clamp(0.33 + (p.ratings.shooting-70)/100 * 0.15 + shootingBonus + (peakFactor-0.5)*0.03 + rnd(-variance, variance), 0.28, 0.50);
-  const ftPct  = clamp(0.72 + (p.ratings.shooting-70)/100 * 0.18 + shootingBonus*0.5 + rnd(-0.02, 0.02), 0.65, 0.92);
+  // Realistic shooting percentages - elite but not impossible
+  const fg2Pct = clamp(0.46 + (p.ratings.finishing-70)/100 * 0.18 + finishingBonus + (healthFactor-0.5)*0.025 + rnd(-variance, variance), 0.40, 0.62);
+  const fg3Pct = clamp(0.34 + (p.ratings.shooting-70)/100 * 0.16 + shootingBonus + (peakFactor-0.5)*0.02 + rnd(-variance, variance), 0.30, 0.48);
+  const ftPct  = clamp(0.74 + (p.ratings.shooting-70)/100 * 0.18 + shootingBonus*0.6 + rnd(-0.015, 0.015), 0.68, 0.92);
 
   const made2 = binomial(twos, fg2Pct);
   const made3 = binomial(threes, fg3Pct);
-  const and1  = binomial(made2 + made3, 0.06);
-  const fts   = and1 * 1 + irnd(0,3);
+  const and1  = binomial(made2 + made3, p.ratings.overall >= 90 ? 0.06 : 0.05); // More realistic foul drawing
+  const fts   = and1 * 1 + irnd(0, p.ratings.overall >= 85 ? 3 : 2); // More reasonable free throws
   const ftm   = binomial(fts, ftPct);
 
-  // Enhanced statistical consistency for high-rated players
-  const playmakingFactor = 0.12 + (p.ratings.playmaking >= 90 ? 0.1 : p.ratings.playmaking >= 80 ? 0.07 : p.ratings.playmaking >= 70 ? 0.04 : 0);
-  const reboundingFactor = 0.18 + (p.ratings.rebounding >= 90 ? 0.14 : p.ratings.rebounding >= 80 ? 0.10 : p.ratings.rebounding >= 70 ? 0.06 : 0);
-  const defenseFactor = 0.03 + (p.ratings.defense >= 90 ? 0.025 : p.ratings.defense >= 80 ? 0.02 : p.ratings.defense >= 70 ? 0.015 : 0);
+  // More realistic other stats for elite players
+  const playmakingFactor = 0.12 + (p.ratings.playmaking >= 98 ? 0.12 : 
+                                  p.ratings.playmaking >= 95 ? 0.10 : 
+                                  p.ratings.playmaking >= 90 ? 0.08 : 
+                                  p.ratings.playmaking >= 85 ? 0.06 : 
+                                  p.ratings.playmaking >= 80 ? 0.04 : 0);
+                                  
+  const reboundingFactor = 0.18 + (p.ratings.rebounding >= 98 ? 0.14 : 
+                                  p.ratings.rebounding >= 95 ? 0.12 : 
+                                  p.ratings.rebounding >= 90 ? 0.10 : 
+                                  p.ratings.rebounding >= 85 ? 0.08 : 
+                                  p.ratings.rebounding >= 80 ? 0.05 : 0);
+                                  
+  const defenseFactor = 0.025 + (p.ratings.defense >= 98 ? 0.025 : 
+                                p.ratings.defense >= 95 ? 0.020 : 
+                                p.ratings.defense >= 90 ? 0.016 : 
+                                p.ratings.defense >= 85 ? 0.012 : 
+                                p.ratings.defense >= 80 ? 0.008 : 0);
 
-  // Apply age multiplier and consistency to counting stats
+  // Apply all multipliers to counting stats - more realistic
   const baseAst = poisson(mins * (p.ratings.playmaking/100) * playmakingFactor);
   const baseReb = poisson(mins * (p.ratings.rebounding/100) * reboundingFactor);
   const baseStl = poisson(mins * (p.ratings.defense/100) * defenseFactor);
@@ -852,7 +965,7 @@ function playerGameSim(p){
   const reb = Math.round(baseReb * ageMultiplier * consistencyFactor);
   const stl = Math.round(baseStl * ageMultiplier);
   const blk = Math.round(baseBlk * ageMultiplier);
-  const pts = Math.round((made2*2 + made3*3 + ftm) * ageMultiplier);
+  const pts = Math.round((made2*2 + made3*3 + ftm) * ageMultiplier * (p.ratings.overall >= 90 ? 1.03 : 1.0)); // Small elite scorer bonus
 
   // Calculate advanced stats
   const per = calculatePER(pts, reb, ast, stl, blk, made2 + made3, twos + threes, ftm, fts, mins);
@@ -875,7 +988,8 @@ function playerGameSim(p){
     ts: ts,
     usage: usage,
     ageMultiplier: ageMultiplier,
-    consistencyFactor: consistencyFactor, // Include for transparency
+    consistencyFactor: consistencyFactor,
+    eliteBonus: {shooting: eliteShootingBonus, finishing: eliteFinishingBonus, playmaking: elitePlaymakingBonus}
   };
 }
 
@@ -1184,6 +1298,14 @@ export default function BasketballLife(){
 
   useEffect(()=>{ saveGame(game); }, [game]);
   
+  // Validate money integrity regularly
+  useEffect(() => {
+    if (game && (isNaN(game.cash) || game.cash < 0)) {
+      console.warn('Money validation: Correcting invalid cash value:', game.cash);
+      setGame(prev => ({ ...prev, cash: 0 }));
+    }
+  }, [game?.cash]);
+  
   // Update team colors dynamically
   useEffect(() => {
     if (game?.team && NBA_TEAMS[game.team]) {
@@ -1259,37 +1381,35 @@ export default function BasketballLife(){
           Recovery: [],
         };
         
-        // More balanced training gains that still reward existing skills
-        let baseBoost = 0.15 + rnd(0, 0.25); // 0.15-0.4 base
+        // More balanced training gains that reward progress but aren't too easy
+        let baseBoost = 0.18 + rnd(0, 0.28); // 0.18-0.46 base (slightly easier)
         
-        // Age penalty for training - older players improve slower but not too much
-        if (p.age >= 25) baseBoost *= 0.95;
-        if (p.age >= 28) baseBoost *= 0.9;
-        if (p.age >= 30) baseBoost *= 0.85;
-        if (p.age >= 33) baseBoost *= 0.8;
+        // Age penalty for training - more gradual
+        if (p.age >= 25) baseBoost *= 0.96;
+        if (p.age >= 28) baseBoost *= 0.92;
+        if (p.age >= 30) baseBoost *= 0.87;
+        if (p.age >= 33) baseBoost *= 0.82;
         
-        // More balanced skill level scaling - high-rated players still improve but slower
+        // Slightly easier skill level scaling - high-rated players can still improve
         trainMap[type].forEach(skill => {
           let skillBoost = baseBoost * intensity;
           const currentRating = p.ratings[skill];
           
-          // Better diminishing returns curve
-          if (currentRating >= 95) skillBoost *= 0.4; // Very hard to improve elite skills
-          else if (currentRating >= 90) skillBoost *= 0.5; // Hard but still possible
-          else if (currentRating >= 85) skillBoost *= 0.65; // Moderate difficulty
-          else if (currentRating >= 80) skillBoost *= 0.75; // Easier
-          else if (currentRating >= 75) skillBoost *= 0.85; // Much easier
-          else if (currentRating >= 70) skillBoost *= 0.9; // Even easier
-          // Below 70 gets full boost - easier to improve weak skills
-          
-          // High-rated players (80+) get consistency bonus in game performance
-          // but training is still challenging
+          // More forgiving diminishing returns curve
+          if (currentRating >= 95) skillBoost *= 0.45; // Still very hard but slightly easier
+          else if (currentRating >= 90) skillBoost *= 0.55; // Hard but more manageable
+          else if (currentRating >= 85) skillBoost *= 0.70; // Moderate difficulty
+          else if (currentRating >= 80) skillBoost *= 0.80; // Easier
+          else if (currentRating >= 75) skillBoost *= 0.90; // Much easier
+          else if (currentRating >= 70) skillBoost *= 0.95; // Even easier
+          // Below 70 gets full boost - easy to improve weak skills
           
           // Training effectiveness based on peak condition
           skillBoost *= (p.peak / 100);
           
-          // Random success/failure with better odds
-          if (chance(0.2)) skillBoost *= 1.8; // Great session (increased chance)
+          // Better success/failure odds with more frequent good sessions
+          if (chance(0.25)) skillBoost *= 1.8; // Great session (increased chance)
+          else if (chance(0.08)) skillBoost *= 0.6; // Poor session (decreased chance)
           else if (chance(0.1)) skillBoost *= 0.6; // Poor session (decreased chance)
           
           p.ratings[skill] = clamp(Math.round(p.ratings[skill] + skillBoost), 40, 99);
@@ -1320,8 +1440,14 @@ export default function BasketballLife(){
           cost = 80; healthGain = 20; peakGain = 15; moraleGain = 3; break;
       }
       
+      // Ensure cash is valid before checking/spending
+      if (isNaN(p.cash)) p.cash = 0;
+      
       if(p.cash >= cost){
         p.cash -= cost;
+        // Ensure cash doesn't become NaN after subtraction
+        if (isNaN(p.cash)) p.cash = 0;
+        
         p.health = clamp(p.health + healthGain, 0, 100);
         p.peak = clamp(p.peak + peakGain, 0, 100);
         p.morale = clamp(p.morale + moraleGain, 0, 100);
@@ -1361,9 +1487,15 @@ export default function BasketballLife(){
       multiplier += (totals.allstars || 0) * 0.1; // All-Stars add value
       
       const value = Math.round(offer.base * multiplier * (1 + rnd(-0.1, 0.25)));
-      p.cash += value;
-      p.endorsements.push({ name: offer.name, value });
-      p.career.timeline.push(event("Endorsement", `Signed with ${offer.name} for $${value}k`));
+      const validValue = isNaN(value) ? 0 : Math.max(0, value);
+      
+      // Ensure cash is valid before adding
+      if (isNaN(p.cash)) p.cash = 0;
+      p.cash += validValue;
+      if (isNaN(p.cash)) p.cash = 0;
+      
+      p.endorsements.push({ name: offer.name, value: validValue });
+      p.career.timeline.push(event("Endorsement", `Signed with ${offer.name} for $${validValue}k`));
       return p;
     });
   }
@@ -1395,9 +1527,15 @@ export default function BasketballLife(){
       multiplier += (totals.scoring || 0) * 0.3; // Scoring titles help shoe sales
       
       const value = Math.round(offer.base * multiplier * (1 + rnd(-0.1, 0.3)));
-      p.cash += value;
-      p.shoeDeals.push({ name: offer.name, value, years: irnd(2,5) });
-      p.career.timeline.push(event("Shoe Deal", `Signed with ${offer.name} for $${value}k`));
+      const validValue = isNaN(value) ? 0 : Math.max(0, value);
+      
+      // Ensure cash is valid before adding
+      if (isNaN(p.cash)) p.cash = 0;
+      p.cash += validValue;
+      if (isNaN(p.cash)) p.cash = 0;
+      
+      p.shoeDeals.push({ name: offer.name, value: validValue, years: irnd(2,5) });
+      p.career.timeline.push(event("Shoe Deal", `Signed with ${offer.name} for $${validValue}k`));
       return p;
     });
   }
@@ -1405,8 +1543,15 @@ export default function BasketballLife(){
   function buyPremiumService(service){
     setGame(prev=>{
       const p = deepClone(prev);
+      
+      // Ensure cash is valid before checking/spending
+      if (isNaN(p.cash)) p.cash = 0;
+      
       if(p.cash >= service.cost && !p.premiumServices.find(s => s.name === service.name)){
         p.cash -= service.cost;
+        // Ensure cash doesn't become NaN after subtraction
+        if (isNaN(p.cash)) p.cash = 0;
+        
         p.premiumServices.push({ ...service, weeksLeft: service.duration });
         if(service.healthBoost) p.health = clamp(p.health + service.healthBoost, 0, 100);
         if(service.peakBoost) p.peak = clamp(p.peak + service.peakBoost, 0, 100);
@@ -1557,6 +1702,169 @@ export default function BasketballLife(){
         p.career.timeline.push(event(failureType, `${failureType} negotiation rejected by management.`));
         pushToast(`${failureType} request denied - ${isExtension ? 'try again later' : 'improve performance'}`);
       }
+      return p;
+    });
+  }
+
+  // New Life Activity Functions
+  function actLifestyle(activityId) {
+    setGame(prev => {
+      const p = deepClone(prev);
+      const activity = LIFE_ACTIVITIES.find(a => a.id === activityId);
+      
+      if (!activity) {
+        pushToast("Activity not found");
+        return p;
+      }
+      
+      // Ensure cash is valid before checking
+      if (isNaN(p.cash)) p.cash = 0;
+      
+      if (p.cash < activity.cost) {
+        pushToast(`Need ${formatMoney(activity.cost)} for ${activity.name}`);
+        return p;
+      }
+      
+      // Apply activity effects
+      p.cash -= activity.cost;
+      // Ensure cash doesn't become NaN after subtraction
+      if (isNaN(p.cash)) p.cash = 0;
+      
+      if (activity.moraleBoost) p.morale = clamp(p.morale + activity.moraleBoost, 0, 100);
+      if (activity.fameBoost) p.fame = clamp(p.fame + activity.fameBoost, 0, 100);
+      if (activity.followersBoost) p.followers += activity.followersBoost;
+      if (activity.peakBoost) p.peak = clamp(p.peak + activity.peakBoost, 0, 100);
+      if (activity.netWorthBoost) {
+        const validBoost = isNaN(activity.netWorthBoost) ? 0 : activity.netWorthBoost;
+        p.cash += validBoost;
+        if (isNaN(p.cash)) p.cash = 0;
+      }
+      
+      // Special dating logic
+      if (activityId === 'dating') {
+        const availablePartners = DATING_POOL.filter(partner => p.fame >= partner.fameRequirement);
+        if (availablePartners.length > 0 && !p.relationships.girlfriend) {
+          if (chance(0.3)) { // 30% chance to find girlfriend
+            p.relationships.girlfriend = pick(availablePartners);
+            p.relationships.relationshipLevel = 20;
+            pushToast(`Started dating ${p.relationships.girlfriend.name}!`);
+          }
+        } else if (p.relationships.girlfriend) {
+          p.relationships.relationshipLevel = Math.min(100, p.relationships.relationshipLevel + 10);
+          if (p.relationships.relationshipLevel >= 80 && chance(0.1)) {
+            pushToast(`${p.relationships.girlfriend.name} wants to get married!`);
+          }
+        }
+      }
+      
+      p.career.timeline.push(event("Lifestyle", `${activity.name} - ${formatMoney(activity.cost)}`));
+      pushToast(`${activity.name} completed!`);
+      return p;
+    });
+  }
+
+  function makeInvestment(investmentId) {
+    setGame(prev => {
+      const p = deepClone(prev);
+      const investment = INVESTMENT_OPTIONS.find(i => i.id === investmentId);
+      
+      if (!investment) {
+        pushToast("Investment not found");
+        return p;
+      }
+      
+      // Ensure cash is valid before checking
+      if (isNaN(p.cash)) p.cash = 0;
+      
+      if (p.cash < investment.cost) {
+        pushToast(`Need ${formatMoney(investment.cost)} for ${investment.name}`);
+        return p;
+      }
+      
+      // Check if already invested
+      if (p.investments.find(inv => inv.id === investmentId)) {
+        pushToast("Already invested in this option");
+        return p;
+      }
+      
+      p.cash -= investment.cost;
+      // Ensure cash doesn't become NaN after subtraction
+      if (isNaN(p.cash)) p.cash = 0;
+      p.investments.push({
+        ...investment,
+        startWeek: p.week,
+        startSeason: p.season,
+        totalValue: investment.cost,
+        active: true
+      });
+      
+      p.career.timeline.push(event("Investment", `Invested ${formatMoney(investment.cost)} in ${investment.name}`));
+      pushToast(`Invested in ${investment.name}!`);
+      return p;
+    });
+  }
+
+  function attemptSocialMediaChallenge(challengeId) {
+    setGame(prev => {
+      const p = deepClone(prev);
+      const challenge = SOCIAL_MEDIA_CHALLENGES.find(c => c.id === challengeId);
+      
+      if (!challenge) {
+        pushToast("Challenge not found");
+        return p;
+      }
+      
+      // Check if already completed
+      if (p.socialMediaChallenges.includes(challengeId)) {
+        pushToast("Challenge already completed");
+        return p;
+      }
+      
+      // Check requirements
+      let canAttempt = true;
+      if (challenge.requirements.overall && p.ratings.overall < challenge.requirements.overall) {
+        pushToast(`Need ${challenge.requirements.overall} overall rating`);
+        canAttempt = false;
+      }
+      if (challenge.requirements.fame && p.fame < challenge.requirements.fame) {
+        pushToast(`Need ${challenge.requirements.fame} fame`);
+        canAttempt = false;
+      }
+      if (challenge.requirements.skillRating) {
+        const maxSkill = Math.max(p.ratings.shooting, p.ratings.finishing, p.ratings.playmaking, p.ratings.defense, p.ratings.rebounding);
+        if (maxSkill < challenge.requirements.skillRating) {
+          pushToast(`Need ${challenge.requirements.skillRating} in any skill`);
+          canAttempt = false;
+        }
+      }
+      
+      if (!canAttempt) return p;
+      
+      // Calculate success rate
+      let successRate = 0.6; // Base 60%
+      if (challenge.difficulty === 'easy') successRate = 0.8;
+      else if (challenge.difficulty === 'medium') successRate = 0.7;
+      else if (challenge.difficulty === 'hard') successRate = 0.5;
+      else if (challenge.difficulty === 'expert') successRate = 0.3;
+      
+      // Adjust for player rating
+      successRate += (p.ratings.overall - 75) / 100;
+      successRate = Math.max(0.1, Math.min(0.9, successRate));
+      
+      if (chance(successRate)) {
+        // Success!
+        p.socialMediaChallenges.push(challengeId);
+        p.followers += challenge.rewards.followers;
+        if (challenge.rewards.fame) p.fame = clamp(p.fame + challenge.rewards.fame, 0, 100);
+        if (challenge.rewards.morale) p.morale = clamp(p.morale + challenge.rewards.morale, 0, 100);
+        
+        p.career.timeline.push(event("Social Media", `Completed ${challenge.name} challenge!`));
+        pushToast(`Challenge completed! +${challenge.rewards.followers.toLocaleString()} followers`);
+      } else {
+        // Failure
+        pushToast(`Challenge failed - try again when you're better`);
+      }
+      
       return p;
     });
   }
@@ -1899,7 +2207,7 @@ export default function BasketballLife(){
       if(a==="ROY") p.career.totals.roys++;
     });
     
-    // Handle championship and Finals MVP awards
+    // Handle championship and Finals MVP awards with winner tracking
     let allAwards = [...awards];
     if(p.stats.finalsMVP){ 
       p.career.totals.finalsMVPs++; 
@@ -1910,6 +2218,26 @@ export default function BasketballLife(){
       p.career.totals.titles++; 
       p.career.awards.push({ season: p.season, award: "NBA Champion"}); 
       allAwards.push("NBA Champion");
+      
+      // Track championship winner for the season
+      CHAMPIONSHIP_WINNERS[p.season] = {
+        team: p.team,
+        teamName: NBA_TEAMS[p.team]?.name || p.team,
+        player: `${p.firstName} ${p.lastName}`,
+        isPlayerTeam: true
+      };
+    } else {
+      // Player's team didn't win - generate a champion
+      if (!CHAMPIONSHIP_WINNERS[p.season]) {
+        const possibleChampions = Object.keys(NBA_TEAMS).filter(team => team !== p.team);
+        const championTeam = pick(possibleChampions);
+        CHAMPIONSHIP_WINNERS[p.season] = {
+          team: championTeam,
+          teamName: NBA_TEAMS[championTeam]?.name || championTeam,
+          player: null,
+          isPlayerTeam: false
+        };
+      }
     }
 
     // Show awards popup if there are any awards
@@ -1919,21 +2247,30 @@ export default function BasketballLife(){
       }, 500);
     }
 
-    // Pay contract salary for the season
-    const seasonSalary = Math.round(p.contract.salary / p.contract.years);
-    p.cash += seasonSalary;
-    p.career.timeline.push(event("Contract", `Received $${seasonSalary}k salary payment.`));
+    // Pay contract salary for the season - with NaN protection
+    const seasonSalary = Math.round((p.contract.salary || 0) / (p.contract.years || 1));
+    const validSeasonSalary = isNaN(seasonSalary) ? 0 : seasonSalary;
+    p.cash = (p.cash || 0) + validSeasonSalary;
+    
+    // Ensure cash never becomes NaN or negative from operations
+    if (isNaN(p.cash) || p.cash < 0) p.cash = 0;
+    
+    p.career.timeline.push(event("Contract", `Received $${validSeasonSalary}k salary payment.`));
 
-    // Pay endorsement money
+    // Pay endorsement money - with protection
     p.endorsements.forEach(e => {
-      p.cash += e.value;
-      p.career.timeline.push(event("Endorsement", `Received $${e.value}k from ${e.name}.`));
+      const endorsementValue = isNaN(e.value) ? 0 : (e.value || 0);
+      p.cash += endorsementValue;
+      if (isNaN(p.cash)) p.cash = 0;
+      p.career.timeline.push(event("Endorsement", `Received $${endorsementValue}k from ${e.name}.`));
     });
 
-    // Pay shoe deal money
+    // Pay shoe deal money - with protection
     p.shoeDeals.forEach(e => {
-      p.cash += e.value;
-      p.career.timeline.push(event("Shoe Deal", `Received $${e.value}k from ${e.name}.`));
+      const shoeValue = isNaN(e.value) ? 0 : (e.value || 0);
+      p.cash += shoeValue;
+      if (isNaN(p.cash)) p.cash = 0;
+      p.career.timeline.push(event("Shoe Deal", `Received $${shoeValue}k from ${e.name}.`));
     });
 
     // add season to career
@@ -2021,11 +2358,19 @@ export default function BasketballLife(){
     p.teamChem = clamp(p.teamChem + (moved? irnd(-10,10): irnd(-3,6)), 30, 95);
     p.teamStrength = clamp(p.teamStrength + irnd(-4,4) + (moved? irnd(-6,6): 0), 60, 90);
 
-    // endorsements payouts
-    const endorsementPayout = Math.round(sum(p.endorsements.map(e=>e.value)) * (0.6 + rnd(-0.1, 0.2)));
-    const shoePayout = Math.round(sum(p.shoeDeals.map(e=>e.value)) * (0.8 + rnd(-0.1, 0.2)));
-    const totalPayout = endorsementPayout + shoePayout;
+    // endorsements payouts - with NaN protection
+    const validEndorsements = p.endorsements.filter(e => e && typeof e.value === 'number' && !isNaN(e.value));
+    const validShoeDeals = p.shoeDeals.filter(e => e && typeof e.value === 'number' && !isNaN(e.value));
+    
+    const endorsementPayout = Math.round(sum(validEndorsements.map(e=>e.value)) * (0.6 + rnd(-0.1, 0.2)));
+    const shoePayout = Math.round(sum(validShoeDeals.map(e=>e.value)) * (0.8 + rnd(-0.1, 0.2)));
+    const totalPayout = (isNaN(endorsementPayout) ? 0 : endorsementPayout) + (isNaN(shoePayout) ? 0 : shoePayout);
+    
+    // Ensure cash is valid before adding
+    if (isNaN(p.cash)) p.cash = 0;
     p.cash += totalPayout; 
+    if (isNaN(p.cash)) p.cash = 0; // Double check after addition
+    
     if(totalPayout>0) p.career.timeline.push(event("Payout",`Endorsements paid $${totalPayout}k`));
 
     // small chance endorsement drops due to scandal
@@ -2056,8 +2401,39 @@ export default function BasketballLife(){
   function retireNow(){
     setGame(prev=>{
       const p = deepClone(prev);
-      p.retired = true; p.alive = true; p.phase = "Retired";
-      p.career.timeline.push(event("Retired","You have retired."));
+      p.retired = true; 
+      p.alive = true; 
+      p.phase = "Retired";
+      
+      // Calculate final career stats and Hall of Fame probability
+      const hofOdds = hallOfFameOdds(p);
+      const hofPercentage = Math.round(hofOdds * 100);
+      
+      // Store retirement info for ceremony
+      p.retirementCelebration = {
+        finalSeason: p.season,
+        finalTeam: p.team,
+        careerStats: deepClone(p.career.totals),
+        awards: deepClone(p.career.awards),
+        hofEligible: true,
+        hofOdds: hofOdds,
+        hofPercentage: hofPercentage,
+        ceremonyShown: false
+      };
+      
+      // Initialize post-retirement features
+      p.postRetirement = {
+        phase: 'celebration', // celebration -> hof_voting -> management
+        ownedTeams: [],
+        managedTeam: null,
+        coachingExperience: 0,
+        businessVentures: [],
+        trainingAcademy: null,
+        reputation: Math.round(p.fame * 0.8), // Starting management reputation
+        availablePositions: []
+      };
+      
+      p.career.timeline.push(event("Retired","You have announced your retirement."));
       return p;
     });
   }
@@ -2069,6 +2445,147 @@ export default function BasketballLife(){
     score += t.titles * 6 + t.mvps * 10 + t.finalsMVPs * 8 + t.allstars * 2 + t.scoring * 3;
     score += (o/100) * 10;
     return clamp(score, 0, 100);
+  }
+
+  // Post-Retirement Functions
+  function proceedToHallOfFameVoting(){
+    setGame(prev=>{
+      const p = deepClone(prev);
+      
+      // Simulate Hall of Fame voting
+      const hofOdds = p.retirementCelebration.hofOdds;
+      const randomRoll = Math.random();
+      const inducted = randomRoll < hofOdds;
+      
+      p.retirementCelebration.hofResult = {
+        inducted: inducted,
+        votingPercentage: Math.round((randomRoll + hofOdds) / 2 * 100), // Simulated voting %
+        yearInducted: p.season + 3, // HoF typically 3 years after retirement
+        rank: inducted ? calculateHofRanking(p) : null
+      };
+      
+      p.postRetirement.phase = 'hof_result';
+      
+      if (inducted) {
+        p.career.timeline.push(event("Hall of Fame", `Inducted into Basketball Hall of Fame!`));
+        pushToast("🏆 HALL OF FAME INDUCTEE! 🏆");
+      } else {
+        p.career.timeline.push(event("Hall of Fame", `Not selected for Hall of Fame this year.`));
+        pushToast("Hall of Fame voting results announced");
+      }
+      
+      return p;
+    });
+  }
+  
+  function calculateHofRanking(player) {
+    // Simplified ranking system - in reality this would compare against historical greats
+    const totalScore = (player.career.totals.points || 0) + 
+                       (player.career.totals.mvps || 0) * 5000 + 
+                       (player.career.totals.titles || 0) * 3000 +
+                       (player.career.totals.finalsMVPs || 0) * 4000;
+    
+    if (totalScore > 50000) return Math.floor(Math.random() * 3) + 1; // Top 3
+    if (totalScore > 35000) return Math.floor(Math.random() * 5) + 3; // Top 3-8
+    if (totalScore > 25000) return Math.floor(Math.random() * 5) + 6; // Top 6-10
+    return Math.floor(Math.random() * 10) + 11; // Outside top 10
+  }
+  
+  function enterManagementPhase(){
+    setGame(prev=>{
+      const p = deepClone(prev);
+      p.postRetirement.phase = 'management';
+      
+      // Generate available management opportunities
+      p.postRetirement.availablePositions = generateManagementOpportunities(p);
+      
+      pushToast("Welcome to your post-playing career!");
+      return p;
+    });
+  }
+  
+  function generateManagementOpportunities(player) {
+    const opportunities = [];
+    const reputation = player.postRetirement.reputation;
+    
+    // Coaching opportunities
+    if (reputation > 60) {
+      opportunities.push({
+        type: 'head_coach',
+        team: pick(TEAMS),
+        salary: Math.round(reputation * 0.5 + Math.random() * 20),
+        requirements: { reputation: 60, experience: 0 }
+      });
+    }
+    
+    if (reputation > 40) {
+      opportunities.push({
+        type: 'assistant_coach',
+        team: pick(TEAMS),
+        salary: Math.round(reputation * 0.3 + Math.random() * 10),
+        requirements: { reputation: 40, experience: 0 }
+      });
+    }
+    
+    // Front office opportunities
+    if (reputation > 70) {
+      opportunities.push({
+        type: 'general_manager',
+        team: pick(TEAMS),
+        salary: Math.round(reputation * 0.8 + Math.random() * 30),
+        requirements: { reputation: 70, experience: 2 }
+      });
+    }
+    
+    // Team ownership (if enough money)
+    if (player.cash > 1000) { // Need at least $1B (1000k in game money)
+      opportunities.push({
+        type: 'team_purchase',
+        team: pick(TEAMS),
+        cost: Math.round(800 + Math.random() * 400), // $800M-$1.2B
+        requirements: { cash: 800 }
+      });
+    }
+    
+    return opportunities;
+  }
+  
+  function acceptManagementPosition(position) {
+    setGame(prev=>{
+      const p = deepClone(prev);
+      
+      if (position.type === 'team_purchase') {
+        if (p.cash >= position.cost) {
+          p.cash -= position.cost;
+          p.postRetirement.ownedTeams.push({
+            team: position.team,
+            purchasePrice: position.cost,
+            currentValue: position.cost,
+            season: p.season
+          });
+          p.career.timeline.push(event("Business", `Purchased ${position.team} for $${position.cost}k`));
+          pushToast(`🏢 You now own the ${position.team}!`);
+        } else {
+          pushToast("Not enough money to purchase team");
+          return p;
+        }
+      } else {
+        p.postRetirement.managedTeam = {
+          team: position.team,
+          role: position.type,
+          salary: position.salary,
+          startSeason: p.season,
+          record: { wins: 0, losses: 0 }
+        };
+        p.career.timeline.push(event("Management", `Accepted ${position.type} position with ${position.team}`));
+        pushToast(`🏀 Welcome to the ${position.team} front office!`);
+      }
+      
+      // Remove accepted position from available
+      p.postRetirement.availablePositions = p.postRetirement.availablePositions.filter(pos => pos !== position);
+      
+      return p;
+    });
   }
 
   function exportSave(){
@@ -2092,49 +2609,107 @@ export default function BasketballLife(){
 
   return (
     <div className="fade-in">
-      <Header game={game} onReset={resetAll} onExport={exportSave} onImport={()=>setShowImport(true)} onRetire={retireNow} />
-
-      <Tabs current={tab} onSelect={setTab} tabs={["Home","Training","Health","Team","Contracts","Awards","History","Analytics","League"]} />
-
-      {tab==="Home" && (
-        <HomePanel game={game} avg={avg} onWeek={playNextWeek} onEvent={randomLifeEvent} onSocialMedia={postSocialMedia} onSimMonth={simMonth} onSimSeason={simSeason} />
+      {!game.retired ? (
+        <>
+          <Header game={game} onReset={resetAll} onExport={exportSave} onImport={()=>setShowImport(true)} onRetire={retireNow} />
+          <Tabs current={tab} onSelect={setTab} tabs={["Home","Training","Health","Life","Social","Team","Contracts","Awards","History","Analytics","League"]} />
+          
+          {tab==="Home" && (
+            <HomePanel game={game} avg={avg} onWeek={playNextWeek} onEvent={randomLifeEvent} onSocialMedia={postSocialMedia} onSimMonth={simMonth} onSimSeason={simSeason} />
+          )}
+        </>
+      ) : (
+        <>
+          <RetirementHeader game={game} onReset={resetAll} onExport={exportSave} onImport={()=>setShowImport(true)} />
+          
+          {game.postRetirement?.phase === 'celebration' && (
+            <RetirementCelebrationPanel 
+              game={game} 
+              onProceedToHoF={proceedToHallOfFameVoting}
+            />
+          )}
+          
+          {game.postRetirement?.phase === 'hof_result' && (
+            <HallOfFameResultPanel 
+              game={game} 
+              onEnterManagement={enterManagementPhase}
+            />
+          )}
+          
+          {game.postRetirement?.phase === 'management' && (
+            <>
+              <ManagementTabs current={tab} onSelect={setTab} tabs={["Overview","Opportunities","Teams","Business","Legacy"]} />
+              
+              {tab==="Overview" && (
+                <ManagementOverviewPanel game={game} />
+              )}
+              
+              {tab==="Opportunities" && (
+                <ManagementOpportunitiesPanel 
+                  game={game} 
+                  onAcceptPosition={acceptManagementPosition}
+                />
+              )}
+              
+              {tab==="Teams" && (
+                <TeamManagementPanel game={game} />
+              )}
+              
+              {tab==="Business" && (
+                <BusinessPanel game={game} />
+              )}
+              
+              {tab==="Legacy" && (
+                <LegacyPanel game={game} />
+              )}
+            </>
+          )}
+        </>
       )}
 
-        {tab==="Training" && (
-          <TrainingPanel game={game} onTrain={actTrain} onEndorse={takeEndorsement} onShoeEndorse={takeShoeEndorsement} 
-                         onPremium={buyPremiumService} endorsements={game.endorsements} shoeDeals={game.shoeDeals} 
-                         premiumServices={game.premiumServices} cash={game.cash} />
-        )}
+      {!game.retired && tab==="Training" && (
+        <TrainingPanel game={game} onTrain={actTrain} onEndorse={takeEndorsement} onShoeEndorse={takeShoeEndorsement} 
+                       onPremium={buyPremiumService} endorsements={game.endorsements} shoeDeals={game.shoeDeals} 
+                       premiumServices={game.premiumServices} cash={game.cash} />
+      )}
 
-        {tab==="Health" && (
-          <HealthPanel onHealth={actHealth} cash={game.cash} health={game.health} peak={game.peak} />
-        )}
+      {!game.retired && tab==="Health" && (
+        <HealthPanel onHealth={actHealth} cash={game.cash} health={game.health} peak={game.peak} />
+      )}
 
-        {tab==="Team" && (
-          <TeamPanel game={game} avg={avg} onTrade={requestTrade} onContract={requestContract} />
-        )}
+      {!game.retired && tab==="Life" && (
+        <LifePanel game={game} onLifestyle={actLifestyle} onInvestment={makeInvestment} />
+      )}
 
-        {tab==="Contracts" && (
-          <ContractsPanel game={game} />
-        )}
+      {!game.retired && tab==="Social" && (
+        <SocialPanel game={game} onChallenge={attemptSocialMediaChallenge} />
+      )}
 
-        {tab==="Awards" && (
-          <AwardsPanel game={game} />
-        )}
+      {!game.retired && tab==="Team" && (
+        <TeamPanel game={game} avg={avg} onTrade={requestTrade} onContract={requestContract} />
+      )}
 
-        {tab==="History" && (
-          <HistoryPanel game={game} hof={hallOfFameOdds(game)} />
-        )}
+      {!game.retired && tab==="Contracts" && (
+        <ContractsPanel game={game} />
+      )}
 
-        {tab==="Analytics" && (
-          <AnalyticsPanel game={game} />
-        )}
+      {!game.retired && tab==="Awards" && (
+        <AwardsPanel game={game} />
+      )}
 
-        {tab==="League" && (
-          <LeaguePanel game={game} />
-        )}
+      {!game.retired && tab==="History" && (
+        <HistoryPanel game={game} hof={hallOfFameOdds(game)} />
+      )}
 
-        {toast && <Toast text={toast.text} />}
+      {!game.retired && tab==="Analytics" && (
+        <AnalyticsPanel game={game} />
+      )}
+
+      {!game.retired && tab==="League" && (
+        <LeaguePanel game={game} />
+      )}
+
+      {toast && <Toast text={toast.text} />}
 
         {showImport && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
@@ -2169,6 +2744,7 @@ export default function BasketballLife(){
   );
 }
 
+// Simple profile picture component
 // ---------- Subcomponents ----------
 function Header({ game, onReset, onExport, onImport, onRetire }){
   const teamInfo = NBA_TEAMS[game.team];
@@ -2178,17 +2754,25 @@ function Header({ game, onReset, onExport, onImport, onRetire }){
     <div className="header">
       <div className="header-content">
         <div className="player-info">
-          <div className="player-avatar">
-            {game.name.split(' ').map(n => n[0]).join('')}
-          </div>
+          <ProfilePicture 
+            appearance={game.appearance} 
+            firstName={game.firstName} 
+            lastName={game.lastName} 
+            size={60} 
+          />
           <div className="player-details">
-            <h1>{game.name}</h1>
+            <h1>{game.firstName} {game.lastName}</h1>
             <div className="player-meta">
               <span>{teamName}</span>
               <span>#{game.jersey}</span>
               <span>{game.archetype}</span>
               <span>{game.ratings.overall} OVR</span>
-              <span>${game.cash}k</span>
+              <span>{formatMoney(game.cash)}</span>
+              {game.relationships?.girlfriend && (
+                <span style={{ color: 'var(--team-secondary)' }}>
+                  💕 {game.relationships.girlfriend.name}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -3552,6 +4136,955 @@ function AwardsPopup({ awards, season, champion, finalsMVP, onClose }){
 }
 
 function cap(s){ return s.slice(0,1).toUpperCase()+s.slice(1); }
+
+// Profile Picture Component
+function ProfilePicture({ appearance, firstName, lastName, size = 40, className = "" }) {
+  if (!appearance) {
+    // Fallback to initials
+    const initials = firstName && lastName ? `${firstName[0]}${lastName[0]}` : '??';
+    return (
+      <div 
+        className={`profile-picture ${className}`}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: '50%',
+          background: 'linear-gradient(135deg, var(--team-primary), var(--team-secondary))',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: Math.round(size * 0.4),
+          fontWeight: 'bold',
+          color: 'white',
+          border: '2px solid var(--team-primary)'
+        }}
+      >
+        {initials}
+      </div>
+    );
+  }
+
+  return (
+    <div 
+      className={`profile-picture ${className}`}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        background: `linear-gradient(135deg, ${appearance.skin}, ${appearance.skin})`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        position: 'relative',
+        border: '3px solid var(--team-primary)',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+        overflow: 'hidden'
+      }}
+    >
+      {/* Face */}
+      <div style={{
+        width: '85%',
+        height: '85%',
+        borderRadius: '50%',
+        background: appearance.skin,
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        {/* Hair */}
+        <div style={{
+          position: 'absolute',
+          top: '5%',
+          left: '10%',
+          right: '10%',
+          height: '40%',
+          background: appearance.hair,
+          borderRadius: '50% 50% 20% 20%',
+          zIndex: 1
+        }} />
+        
+        {/* Eyes */}
+        <div style={{
+          position: 'absolute',
+          top: '35%',
+          left: '25%',
+          width: '12%',
+          height: '8%',
+          background: appearance.eyes,
+          borderRadius: '50%'
+        }} />
+        <div style={{
+          position: 'absolute',
+          top: '35%',
+          right: '25%',
+          width: '12%',
+          height: '8%',
+          background: appearance.eyes,
+          borderRadius: '50%'
+        }} />
+        
+        {/* Nose */}
+        <div style={{
+          position: 'absolute',
+          top: '45%',
+          left: '47%',
+          width: '6%',
+          height: '8%',
+          background: `linear-gradient(to bottom, transparent, ${appearance.skin})`,
+          borderRadius: '0 0 50% 50%'
+        }} />
+        
+        {/* Mouth */}
+        <div style={{
+          position: 'absolute',
+          top: '60%',
+          left: '40%',
+          width: '20%',
+          height: '4%',
+          background: '#8B4513',
+          borderRadius: '0 0 20px 20px'
+        }} />
+      </div>
+    </div>
+  );
+}
+
+// Life Panel Component
+function LifePanel({ game, onLifestyle, onInvestment }) {
+  return (
+    <div className="grid-2" style={{gap: '20px'}}>
+      {/* Lifestyle Activities */}
+      <div className="panel panel-content">
+        <h3 style={{marginBottom: '16px', color: 'var(--team-primary)'}}>
+          🌟 Lifestyle Activities
+        </h3>
+        
+        {/* Current Relationship Status */}
+        {game.relationships?.girlfriend && (
+          <div style={{
+            padding: '12px',
+            background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.1), rgba(219, 39, 119, 0.1))',
+            borderRadius: '8px',
+            marginBottom: '16px',
+            border: '1px solid rgba(236, 72, 153, 0.2)'
+          }}>
+            <div style={{fontWeight: '600', marginBottom: '4px'}}>
+              💕 Dating {game.relationships.girlfriend.name}
+            </div>
+            <div style={{fontSize: '12px', color: 'var(--text-muted)'}}>
+              {game.relationships.girlfriend.profession} • Love Level: {game.relationships.relationshipLevel}/100
+            </div>
+            <div style={{
+              width: '100%',
+              height: '4px',
+              background: 'rgba(236, 72, 153, 0.2)',
+              borderRadius: '2px',
+              marginTop: '8px',
+              overflow: 'hidden'
+            }}>
+              <div style={{
+                width: `${game.relationships.relationshipLevel}%`,
+                height: '100%',
+                background: 'linear-gradient(90deg, #ec4899, #db2777)',
+                borderRadius: '2px'
+              }} />
+            </div>
+          </div>
+        )}
+        
+        <div style={{display: 'grid', gap: '12px'}}>
+          {LIFE_ACTIVITIES.map(activity => (
+            <button
+              key={activity.id}
+              className="btn btn-action"
+              style={{
+                padding: '12px',
+                textAlign: 'left',
+                background: game.cash >= activity.cost ? 
+                  'linear-gradient(135deg, var(--bg-secondary), var(--bg-primary))' : 
+                  'rgba(100, 100, 100, 0.1)',
+                border: game.cash >= activity.cost ? 
+                  '1px solid var(--team-primary)' : 
+                  '1px solid rgba(100, 100, 100, 0.3)',
+                opacity: game.cash >= activity.cost ? 1 : 0.5
+              }}
+              onClick={() => onLifestyle(activity.id)}
+              disabled={game.cash < activity.cost}
+            >
+              <div style={{fontWeight: '600', marginBottom: '4px'}}>
+                {activity.name}
+              </div>
+              <div style={{fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px'}}>
+                Cost: {formatMoney(activity.cost)} • Duration: {activity.duration} week{activity.duration > 1 ? 's' : ''}
+              </div>
+              <div style={{fontSize: '11px', display: 'flex', gap: '12px', flexWrap: 'wrap'}}>
+                {activity.moraleBoost && <span style={{color: '#10b981'}}>+{activity.moraleBoost} Morale</span>}
+                {activity.fameBoost && <span style={{color: '#f59e0b'}}>+{activity.fameBoost} Fame</span>}
+                {activity.followersBoost && <span style={{color: '#3b82f6'}}>+{activity.followersBoost} Followers</span>}
+                {activity.peakBoost && <span style={{color: '#8b5cf6'}}>+{activity.peakBoost} Peak</span>}
+                {activity.netWorthBoost && <span style={{color: '#06b6d4'}}>+{formatMoney(activity.netWorthBoost)}</span>}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Investments */}
+      <div className="panel panel-content">
+        <h3 style={{marginBottom: '16px', color: 'var(--team-primary)'}}>
+          💰 Investment Portfolio
+        </h3>
+        
+        {/* Current Investments */}
+        {game.investments && game.investments.length > 0 && (
+          <div style={{marginBottom: '20px'}}>
+            <h4 style={{marginBottom: '12px', fontSize: '14px', color: 'var(--text-secondary)'}}>
+              Current Investments
+            </h4>
+            <div style={{display: 'grid', gap: '8px'}}>
+              {game.investments.map((investment, idx) => {
+                const weeksElapsed = (game.season - investment.startSeason) * 20 + (game.week - investment.startWeek);
+                const progress = Math.min(100, (weeksElapsed / (investment.duration * 20)) * 100);
+                const currentValue = investment.totalValue * (1 + (investment.returnRate * progress / 100));
+                
+                return (
+                  <div key={idx} style={{
+                    padding: '10px',
+                    background: 'var(--bg-secondary)',
+                    borderRadius: '6px',
+                    border: '1px solid var(--team-primary)'
+                  }}>
+                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px'}}>
+                      <span style={{fontWeight: '600'}}>{investment.name}</span>
+                      <span style={{color: currentValue > investment.totalValue ? '#10b981' : '#ef4444'}}>
+                        {formatMoney(Math.round(currentValue))}
+                      </span>
+                    </div>
+                    <div style={{fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px'}}>
+                      Risk: {investment.riskLevel} • Return: {(investment.returnRate * 100).toFixed(1)}%/year
+                    </div>
+                    <div style={{
+                      width: '100%',
+                      height: '4px',
+                      background: 'rgba(100, 100, 100, 0.2)',
+                      borderRadius: '2px',
+                      overflow: 'hidden'
+                    }}>
+                      <div style={{
+                        width: `${progress}%`,
+                        height: '100%',
+                        background: 'linear-gradient(90deg, var(--team-primary), var(--team-secondary))',
+                        borderRadius: '2px'
+                      }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        
+        {/* Available Investments */}
+        <div style={{display: 'grid', gap: '12px'}}>
+          {INVESTMENT_OPTIONS.filter(inv => !game.investments?.find(i => i.id === inv.id)).map(investment => (
+            <button
+              key={investment.id}
+              className="btn btn-action"
+              style={{
+                padding: '12px',
+                textAlign: 'left',
+                background: game.cash >= investment.cost ? 
+                  'linear-gradient(135deg, var(--bg-secondary), var(--bg-primary))' : 
+                  'rgba(100, 100, 100, 0.1)',
+                border: game.cash >= investment.cost ? 
+                  '1px solid var(--team-primary)' : 
+                  '1px solid rgba(100, 100, 100, 0.3)',
+                opacity: game.cash >= investment.cost ? 1 : 0.5
+              }}
+              onClick={() => onInvestment(investment.id)}
+              disabled={game.cash < investment.cost}
+            >
+              <div style={{fontWeight: '600', marginBottom: '4px'}}>
+                {investment.name}
+              </div>
+              <div style={{fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px'}}>
+                Cost: {formatMoney(investment.cost)} • Duration: {investment.duration} years
+              </div>
+              <div style={{fontSize: '11px', display: 'flex', gap: '12px', alignItems: 'center'}}>
+                <span style={{
+                  color: investment.riskLevel === 'low' ? '#10b981' : 
+                        investment.riskLevel === 'medium' ? '#f59e0b' : '#ef4444'
+                }}>
+                  {investment.riskLevel.toUpperCase()} RISK
+                </span>
+                <span style={{color: '#06b6d4'}}>
+                  {(investment.returnRate * 100).toFixed(1)}% Annual Return
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Social Media Panel Component
+function SocialPanel({ game, onChallenge }) {
+  return (
+    <div className="grid-2" style={{gap: '20px'}}>
+      {/* Social Media Stats */}
+      <div className="panel panel-content">
+        <h3 style={{marginBottom: '16px', color: 'var(--team-primary)'}}>
+          📱 Social Media Status
+        </h3>
+        
+        <div style={{display: 'grid', gap: '12px', marginBottom: '20px'}}>
+          <div style={{
+            padding: '12px',
+            background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(37, 99, 235, 0.1))',
+            borderRadius: '8px',
+            border: '1px solid rgba(59, 130, 246, 0.2)'
+          }}>
+            <div style={{fontWeight: '600', marginBottom: '4px'}}>
+              👥 Followers: {game.followers?.toLocaleString() || 0}
+            </div>
+            <div style={{fontSize: '12px', color: 'var(--text-muted)'}}>
+              Fame Level: {game.fame}/100
+            </div>
+          </div>
+          
+          <div style={{
+            padding: '12px',
+            background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(217, 119, 6, 0.1))',
+            borderRadius: '8px',
+            border: '1px solid rgba(245, 158, 11, 0.2)'
+          }}>
+            <div style={{fontWeight: '600', marginBottom: '4px'}}>
+              🔥 Engagement Rate
+            </div>
+            <div style={{fontSize: '12px', color: 'var(--text-muted)'}}>
+              {game.fame >= 80 ? 'Viral Star' : 
+               game.fame >= 60 ? 'Influencer' : 
+               game.fame >= 40 ? 'Rising' : 
+               game.fame >= 20 ? 'Growing' : 'Building'}
+            </div>
+          </div>
+        </div>
+        
+        {/* Recent Social Media Activity */}
+        {game.socialMediaChallenges && game.socialMediaChallenges.length > 0 && (
+          <div>
+            <h4 style={{marginBottom: '12px', fontSize: '14px', color: 'var(--text-secondary)'}}>
+              Recent Posts
+            </h4>
+            <div style={{display: 'grid', gap: '8px'}}>
+              {game.socialMediaChallenges.slice(-3).map((challenge, idx) => (
+                <div key={idx} style={{
+                  padding: '10px',
+                  background: 'var(--bg-secondary)',
+                  borderRadius: '6px',
+                  border: '1px solid var(--team-primary)'
+                }}>
+                  <div style={{fontWeight: '600', marginBottom: '4px'}}>
+                    {challenge.name}
+                  </div>
+                  <div style={{fontSize: '11px', color: 'var(--text-muted)'}}>
+                    +{challenge.followersGained?.toLocaleString()} followers • +{challenge.fameGained} fame
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Social Media Challenges */}
+      <div className="panel panel-content">
+        <h3 style={{marginBottom: '16px', color: 'var(--team-primary)'}}>
+          🎯 Social Media Challenges
+        </h3>
+        
+        <div style={{display: 'grid', gap: '12px'}}>
+          {SOCIAL_MEDIA_CHALLENGES.map(challenge => {
+            const meetsRequirements = game.ratings.overall >= challenge.requirements.overall &&
+                                     game.fame >= (challenge.requirements.fame || 0) &&
+                                     (!challenge.requirements.skillRating || 
+                                      Math.max(game.ratings.shooting, game.ratings.finishing, game.ratings.playmaking) >= challenge.requirements.skillRating);
+            
+            const completed = game.socialMediaChallenges?.find(c => c.id === challenge.id);
+            
+            return (
+              <button
+                key={challenge.id}
+                className="btn btn-action"
+                style={{
+                  padding: '14px',
+                  textAlign: 'left',
+                  background: completed ? 
+                    'linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(22, 163, 74, 0.2))' :
+                    meetsRequirements ? 
+                      'linear-gradient(135deg, var(--bg-secondary), var(--bg-primary))' : 
+                      'rgba(100, 100, 100, 0.1)',
+                  border: completed ?
+                    '1px solid #22c55e' :
+                    meetsRequirements ? 
+                      '1px solid var(--team-primary)' : 
+                      '1px solid rgba(100, 100, 100, 0.3)',
+                  opacity: completed ? 0.7 : meetsRequirements ? 1 : 0.5
+                }}
+                onClick={() => onChallenge(challenge.id)}
+                disabled={!meetsRequirements || completed}
+              >
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px'}}>
+                  <span style={{fontWeight: '600'}}>
+                    {challenge.name} {completed && '✅'}
+                  </span>
+                  <span style={{
+                    fontSize: '11px',
+                    padding: '2px 6px',
+                    borderRadius: '10px',
+                    background: challenge.difficulty === 'easy' ? '#10b981' :
+                               challenge.difficulty === 'medium' ? '#f59e0b' :
+                               challenge.difficulty === 'hard' ? '#ef4444' : '#8b5cf6',
+                    color: 'white'
+                  }}>
+                    {challenge.difficulty.toUpperCase()}
+                  </span>
+                </div>
+                
+                <div style={{fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px'}}>
+                  {challenge.content}
+                </div>
+                
+                <div style={{fontSize: '11px', marginBottom: '8px'}}>
+                  <div style={{color: 'var(--text-muted)', marginBottom: '4px'}}>Requirements:</div>
+                  <div style={{display: 'flex', gap: '8px', flexWrap: 'wrap'}}>
+                    <span style={{color: game.ratings.overall >= challenge.requirements.overall ? '#10b981' : '#ef4444'}}>
+                      {challenge.requirements.overall}+ OVR
+                    </span>
+                    {challenge.requirements.fame && (
+                      <span style={{color: game.fame >= challenge.requirements.fame ? '#10b981' : '#ef4444'}}>
+                        {challenge.requirements.fame}+ Fame
+                      </span>
+                    )}
+                    {challenge.requirements.skillRating && (
+                      <span style={{color: Math.max(game.ratings.shooting, game.ratings.finishing, game.ratings.playmaking) >= challenge.requirements.skillRating ? '#10b981' : '#ef4444'}}>
+                        {challenge.requirements.skillRating}+ Elite Skill
+                      </span>
+                    )}
+                  </div>
+                </div>
+                
+                <div style={{fontSize: '11px', display: 'flex', gap: '12px', flexWrap: 'wrap'}}>
+                  <span style={{color: '#3b82f6'}}>+{challenge.rewards.followers?.toLocaleString()} Followers</span>
+                  <span style={{color: '#f59e0b'}}>+{challenge.rewards.fame} Fame</span>
+                  {challenge.rewards.morale && <span style={{color: '#10b981'}}>+{challenge.rewards.morale} Morale</span>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Retirement Components ----------
+function RetirementHeader({ game, onReset, onExport, onImport }) {
+  return (
+    <div className="header">
+      <div className="header-content">
+        <div className="player-info">
+          <ProfilePicture appearance={game.appearance} size="large" />
+          <div className="player-details">
+            <h1>{game.name} - Retired Legend</h1>
+            <div className="player-meta">
+              <span>Retired after {game.retirementCelebration?.finalSeason} seasons</span>
+              <span>{formatMoney(game.cash)} Net Worth</span>
+              <span>Legacy: {game.postRetirement?.reputation || 0}/100</span>
+            </div>
+          </div>
+        </div>
+        <div className="header-actions">
+          <button className="btn btn-secondary" onClick={onExport}>💾</button>
+          <button className="btn btn-secondary" onClick={onImport}>📥</button>
+          <button className="btn btn-danger" onClick={onReset}>🔄</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RetirementCelebrationPanel({ game, onProceedToHoF }) {
+  const celebration = game.retirementCelebration;
+  const stats = celebration.careerStats;
+  
+  return (
+    <div className="panel">
+      <div className="panel-content">
+        <h2 style={{fontSize: '2.5rem', textAlign: 'center', marginBottom: '2rem', background: 'linear-gradient(45deg, #ffd700, #ff6b35)', backgroundClip: 'text', WebkitBackgroundClip: 'text', color: 'transparent'}}>
+          🏆 RETIREMENT CELEBRATION 🏆
+        </h2>
+        
+        <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem', marginBottom: '3rem'}}>
+          <div className="panel" style={{background: 'linear-gradient(135deg, rgba(255,215,0,0.1), rgba(255,107,53,0.1))'}}>
+            <h3>🏀 Career Statistics</h3>
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem'}}>
+              <div><strong>Games:</strong> {stats.games?.toLocaleString() || 0}</div>
+              <div><strong>Points:</strong> {stats.points?.toLocaleString() || 0}</div>
+              <div><strong>Rebounds:</strong> {stats.rebounds?.toLocaleString() || 0}</div>
+              <div><strong>Assists:</strong> {stats.assists?.toLocaleString() || 0}</div>
+              <div><strong>PPG:</strong> {stats.games ? (stats.points / stats.games).toFixed(1) : 0}</div>
+              <div><strong>RPG:</strong> {stats.games ? (stats.rebounds / stats.games).toFixed(1) : 0}</div>
+            </div>
+          </div>
+          
+          <div className="panel" style={{background: 'linear-gradient(135deg, rgba(59,130,246,0.1), rgba(147,51,234,0.1))'}}>
+            <h3>🏆 Achievements</h3>
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem'}}>
+              <div><strong>Championships:</strong> {stats.titles || 0}</div>
+              <div><strong>MVPs:</strong> {stats.mvps || 0}</div>
+              <div><strong>Finals MVPs:</strong> {stats.finalsMVPs || 0}</div>
+              <div><strong>All-Stars:</strong> {stats.allstars || 0}</div>
+              <div><strong>Scoring Titles:</strong> {stats.scoring || 0}</div>
+              <div><strong>DPOY Awards:</strong> {stats.dpoy || 0}</div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="panel" style={{background: 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.1))', textAlign: 'center', padding: '2rem'}}>
+          <h3 style={{fontSize: '1.8rem', marginBottom: '1rem'}}>🎯 Hall of Fame Probability</h3>
+          <div style={{fontSize: '3rem', fontWeight: 'bold', color: celebration.hofPercentage > 70 ? '#10b981' : celebration.hofPercentage > 40 ? '#f59e0b' : '#ef4444', marginBottom: '1rem'}}>
+            {celebration.hofPercentage}%
+          </div>
+          <p style={{fontSize: '1.1rem', opacity: 0.8, marginBottom: '2rem'}}>
+            Based on your career achievements, statistical performance, and impact on the game
+          </p>
+          <button className="btn btn-primary" style={{fontSize: '1.2rem', padding: '1rem 2rem'}} onClick={onProceedToHoF}>
+            🗳️ Proceed to Hall of Fame Voting
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HallOfFameResultPanel({ game, onEnterManagement }) {
+  const result = game.retirementCelebration.hofResult;
+  
+  return (
+    <div className="panel">
+      <div className="panel-content">
+        {result.inducted ? (
+          <>
+            <h2 style={{fontSize: '3rem', textAlign: 'center', marginBottom: '2rem', color: '#ffd700'}}>
+              🎉 HALL OF FAME INDUCTEE! 🎉
+            </h2>
+            
+            <div className="panel" style={{background: 'linear-gradient(135deg, rgba(255,215,0,0.2), rgba(255,107,53,0.2))', textAlign: 'center', padding: '2rem', marginBottom: '2rem'}}>
+              <h3 style={{fontSize: '2rem', marginBottom: '1rem'}}>Congratulations!</h3>
+              <p style={{fontSize: '1.2rem', marginBottom: '1rem'}}>
+                You received <strong>{result.votingPercentage}%</strong> of the votes
+              </p>
+              <p style={{fontSize: '1.1rem', marginBottom: '1rem'}}>
+                Inducted in <strong>{result.yearInducted}</strong>
+              </p>
+              {result.rank <= 10 && (
+                <div style={{background: 'rgba(255,215,0,0.3)', padding: '1rem', borderRadius: '1rem', marginTop: '1rem'}}>
+                  <h4 style={{color: '#ffd700', fontSize: '1.3rem'}}>🏆 All-Time Ranking: #{result.rank}</h4>
+                  <p>You're considered one of the greatest players in basketball history!</p>
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <h2 style={{fontSize: '2.5rem', textAlign: 'center', marginBottom: '2rem', color: '#ef4444'}}>
+              Hall of Fame Results
+            </h2>
+            
+            <div className="panel" style={{background: 'rgba(239,68,68,0.1)', textAlign: 'center', padding: '2rem', marginBottom: '2rem'}}>
+              <h3 style={{fontSize: '1.5rem', marginBottom: '1rem'}}>Not Selected This Year</h3>
+              <p style={{fontSize: '1.1rem', marginBottom: '1rem'}}>
+                You received <strong>{result.votingPercentage}%</strong> of the votes
+              </p>
+              <p>You'll be eligible again next year. Your legacy lives on!</p>
+            </div>
+          </>
+        )}
+        
+        <div style={{textAlign: 'center', marginTop: '2rem'}}>
+          <button className="btn btn-primary" style={{fontSize: '1.2rem', padding: '1rem 2rem'}} onClick={onEnterManagement}>
+            🏢 Begin Your Post-Playing Career
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ManagementTabs({ current, onSelect, tabs }) {
+  return (
+    <div className="tabs">
+      {tabs.map(tab => (
+        <button
+          key={tab}
+          className={`tab ${current === tab ? 'active' : ''}`}
+          onClick={() => onSelect(tab)}
+        >
+          {tab}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ManagementOverviewPanel({ game }) {
+  const postRetirement = game.postRetirement;
+  
+  return (
+    <div className="panel">
+      <div className="panel-content">
+        <h2>🏢 Management Career Overview</h2>
+        
+        <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem', marginTop: '2rem'}}>
+          <div className="panel">
+            <h3>Current Status</h3>
+            <div>
+              <p><strong>Net Worth:</strong> {formatMoney(game.cash)}</p>
+              <p><strong>Reputation:</strong> {postRetirement.reputation}/100</p>
+              <p><strong>Experience:</strong> {postRetirement.coachingExperience} years</p>
+              {postRetirement.managedTeam && (
+                <p><strong>Current Role:</strong> {postRetirement.managedTeam.role} - {postRetirement.managedTeam.team}</p>
+              )}
+            </div>
+          </div>
+          
+          <div className="panel">
+            <h3>Business Portfolio</h3>
+            <div>
+              <p><strong>Teams Owned:</strong> {postRetirement.ownedTeams.length}</p>
+              <p><strong>Business Ventures:</strong> {postRetirement.businessVentures.length}</p>
+              {postRetirement.trainingAcademy && (
+                <p><strong>Training Academy:</strong> Active</p>
+              )}
+            </div>
+          </div>
+        </div>
+        
+        {postRetirement.ownedTeams.length > 0 && (
+          <div className="panel" style={{marginTop: '2rem'}}>
+            <h3>🏀 Owned Teams</h3>
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem'}}>
+              {postRetirement.ownedTeams.map((ownership, index) => (
+                <div key={index} className="panel" style={{background: 'rgba(59,130,246,0.1)'}}>
+                  <h4>{ownership.team}</h4>
+                  <p>Purchased: Season {ownership.season}</p>
+                  <p>Cost: {formatMoney(ownership.purchasePrice)}</p>
+                  <p>Current Value: {formatMoney(ownership.currentValue)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ManagementOpportunitiesPanel({ game, onAcceptPosition }) {
+  const opportunities = game.postRetirement.availablePositions;
+  
+  return (
+    <div className="panel">
+      <div className="panel-content">
+        <h2>🎯 Available Opportunities</h2>
+        
+        {opportunities.length === 0 ? (
+          <div className="panel" style={{textAlign: 'center', padding: '2rem'}}>
+            <p>No new opportunities available at this time.</p>
+            <p style={{opacity: 0.7}}>Check back later or build your reputation!</p>
+          </div>
+        ) : (
+          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '2rem', marginTop: '2rem'}}>
+            {opportunities.map((opportunity, index) => (
+              <div key={index} className="panel" style={{background: getOpportunityGradient(opportunity.type)}}>
+                <h3>{getOpportunityTitle(opportunity.type)}</h3>
+                <p><strong>Team:</strong> {opportunity.team}</p>
+                {opportunity.salary && <p><strong>Salary:</strong> {formatMoney(opportunity.salary)}/year</p>}
+                {opportunity.cost && <p><strong>Cost:</strong> {formatMoney(opportunity.cost)}</p>}
+                
+                <div style={{marginTop: '1rem', marginBottom: '1rem'}}>
+                  <h4>Requirements:</h4>
+                  {Object.entries(opportunity.requirements).map(([req, value]) => (
+                    <p key={req} style={{
+                      color: checkRequirement(game, req, value) ? '#10b981' : '#ef4444'
+                    }}>
+                      {req}: {value} {checkRequirement(game, req, value) ? '✓' : '✗'}
+                    </p>
+                  ))}
+                </div>
+                
+                <button 
+                  className="btn btn-primary" 
+                  style={{width: '100%'}}
+                  disabled={!canAcceptOpportunity(game, opportunity)}
+                  onClick={() => onAcceptPosition(opportunity)}
+                >
+                  {opportunity.type === 'team_purchase' ? 'Purchase Team' : 'Accept Position'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TeamManagementPanel({ game }) {
+  const managedTeam = game.postRetirement.managedTeam;
+  
+  return (
+    <div className="panel">
+      <div className="panel-content">
+        <h2>🏀 Team Management</h2>
+        
+        {managedTeam ? (
+          <div>
+            <div className="panel" style={{background: 'linear-gradient(135deg, rgba(59,130,246,0.1), rgba(147,51,234,0.1))', marginBottom: '2rem'}}>
+              <h3>{managedTeam.team} - {managedTeam.role.replace('_', ' ').toUpperCase()}</h3>
+              <p><strong>Joined:</strong> Season {managedTeam.startSeason}</p>
+              <p><strong>Salary:</strong> {formatMoney(managedTeam.salary)}/year</p>
+              <p><strong>Record:</strong> {managedTeam.record.wins}-{managedTeam.record.losses}</p>
+            </div>
+            
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '2rem'}}>
+              <div className="panel">
+                <h4>Team Actions</h4>
+                <button className="btn btn-secondary" style={{width: '100%', marginBottom: '1rem'}}>
+                  📊 View Team Stats
+                </button>
+                <button className="btn btn-secondary" style={{width: '100%', marginBottom: '1rem'}}>
+                  🔄 Make Trades
+                </button>
+                <button className="btn btn-secondary" style={{width: '100%'}}>
+                  📋 Set Lineups
+                </button>
+              </div>
+              
+              <div className="panel">
+                <h4>Development</h4>
+                <button className="btn btn-secondary" style={{width: '100%', marginBottom: '1rem'}}>
+                  🏋️ Training Programs
+                </button>
+                <button className="btn btn-secondary" style={{width: '100%', marginBottom: '1rem'}}>
+                  🎯 Draft Strategy
+                </button>
+                <button className="btn btn-secondary" style={{width: '100%'}}>
+                  💼 Hire Staff
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="panel" style={{textAlign: 'center', padding: '2rem'}}>
+            <p>You're not currently managing any team.</p>
+            <p style={{opacity: 0.7}}>Check the Opportunities tab to find coaching or front office positions!</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BusinessPanel({ game }) {
+  return (
+    <div className="panel">
+      <div className="panel-content">
+        <h2>💼 Business Ventures</h2>
+        
+        <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem', marginTop: '2rem'}}>
+          <div className="panel">
+            <h3>Investment Portfolio</h3>
+            <p><strong>Current Net Worth:</strong> {formatMoney(game.cash)}</p>
+            <p><strong>Active Investments:</strong> {game.investments?.length || 0}</p>
+            
+            <div style={{marginTop: '1rem'}}>
+              <button className="btn btn-primary" style={{width: '100%', marginBottom: '1rem'}}>
+                📈 View Investments
+              </button>
+              <button className="btn btn-secondary" style={{width: '100%'}}>
+                💰 New Investment
+              </button>
+            </div>
+          </div>
+          
+          <div className="panel">
+            <h3>Training Academy</h3>
+            {game.postRetirement.trainingAcademy ? (
+              <div>
+                <p>✅ Academy Active</p>
+                <p>Students: {game.postRetirement.trainingAcademy.students || 0}</p>
+                <p>Revenue: {formatMoney(game.postRetirement.trainingAcademy.revenue || 0)}/year</p>
+              </div>
+            ) : (
+              <div>
+                <p>Start your own basketball training academy</p>
+                <button className="btn btn-primary" style={{width: '100%', marginTop: '1rem'}}>
+                  🏀 Start Academy ({formatMoney(500)})
+                </button>
+              </div>
+            )}
+          </div>
+          
+          <div className="panel">
+            <h3>Media & Endorsements</h3>
+            <p>Leverage your playing career for business opportunities</p>
+            <button className="btn btn-secondary" style={{width: '100%', marginBottom: '1rem'}}>
+              📺 TV Commentary
+            </button>
+            <button className="btn btn-secondary" style={{width: '100%', marginBottom: '1rem'}}>
+              📚 Autobiography
+            </button>
+            <button className="btn btn-secondary" style={{width: '100%'}}>
+              🎬 Documentary
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LegacyPanel({ game }) {
+  const hofResult = game.retirementCelebration.hofResult;
+  
+  return (
+    <div className="panel">
+      <div className="panel-content">
+        <h2>🏆 Your Legacy</h2>
+        
+        <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem', marginTop: '2rem'}}>
+          <div className="panel" style={{background: hofResult?.inducted ? 'linear-gradient(135deg, rgba(255,215,0,0.2), rgba(255,107,53,0.2))' : 'rgba(100,100,100,0.1)'}}>
+            <h3>🏛️ Hall of Fame Status</h3>
+            {hofResult?.inducted ? (
+              <div>
+                <p style={{color: '#ffd700', fontSize: '1.2rem', fontWeight: 'bold'}}>✅ INDUCTED</p>
+                <p>Class of {hofResult.yearInducted}</p>
+                <p>Voting: {hofResult.votingPercentage}%</p>
+                {hofResult.rank <= 10 && (
+                  <p style={{color: '#ffd700'}}>All-Time Rank: #{hofResult.rank}</p>
+                )}
+              </div>
+            ) : (
+              <div>
+                <p style={{color: '#ef4444'}}>Not Yet Inducted</p>
+                <p>Voting: {hofResult?.votingPercentage || 0}%</p>
+                <p style={{opacity: 0.7}}>Eligible for future voting</p>
+              </div>
+            )}
+          </div>
+          
+          <div className="panel">
+            <h3>📊 Career Statistics</h3>
+            <div>
+              <p><strong>Career PPG:</strong> {game.career.totals.games ? (game.career.totals.points / game.career.totals.games).toFixed(1) : 0}</p>
+              <p><strong>Total Points:</strong> {game.career.totals.points?.toLocaleString() || 0}</p>
+              <p><strong>Championships:</strong> {game.career.totals.titles || 0}</p>
+              <p><strong>MVP Awards:</strong> {game.career.totals.mvps || 0}</p>
+            </div>
+          </div>
+          
+          <div className="panel">
+            <h3>🎯 Historical Impact</h3>
+            <div>
+              <p><strong>Peak Overall:</strong> {Math.max(...(game.career.seasons?.map(s => s.overall) || [game.ratings.overall]))}</p>
+              <p><strong>Seasons Played:</strong> {game.career.seasons?.length || 0}</p>
+              <p><strong>All-Star Games:</strong> {game.career.totals.allstars || 0}</p>
+              <p><strong>Records Held:</strong> Coming Soon</p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="panel" style={{marginTop: '2rem', textAlign: 'center'}}>
+          <h3>💫 Legacy Score</h3>
+          <div style={{fontSize: '3rem', fontWeight: 'bold', color: getLegacyColor(calculateLegacyScore(game))}}>
+            {calculateLegacyScore(game)}/100
+          </div>
+          <p style={{opacity: 0.8}}>Based on achievements, longevity, and impact</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Helper functions for retirement features
+function getOpportunityTitle(type) {
+  const titles = {
+    'head_coach': '🏀 Head Coach Position',
+    'assistant_coach': '👥 Assistant Coach Position', 
+    'general_manager': '💼 General Manager Position',
+    'team_purchase': '🏢 Team Ownership Opportunity'
+  };
+  return titles[type] || 'Management Opportunity';
+}
+
+function getOpportunityGradient(type) {
+  const gradients = {
+    'head_coach': 'linear-gradient(135deg, rgba(59,130,246,0.1), rgba(147,51,234,0.1))',
+    'assistant_coach': 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.1))',
+    'general_manager': 'linear-gradient(135deg, rgba(245,158,11,0.1), rgba(217,119,6,0.1))',
+    'team_purchase': 'linear-gradient(135deg, rgba(255,215,0,0.2), rgba(255,107,53,0.2))'
+  };
+  return gradients[type] || 'rgba(100,100,100,0.1)';
+}
+
+function checkRequirement(game, req, value) {
+  switch(req) {
+    case 'reputation': return game.postRetirement.reputation >= value;
+    case 'experience': return game.postRetirement.coachingExperience >= value;
+    case 'cash': return game.cash >= value;
+    default: return true;
+  }
+}
+
+function canAcceptOpportunity(game, opportunity) {
+  return Object.entries(opportunity.requirements).every(([req, value]) => 
+    checkRequirement(game, req, value)
+  );
+}
+
+function calculateLegacyScore(game) {
+  let score = 0;
+  const stats = game.career.totals;
+  
+  // Statistical achievements
+  score += Math.min((stats.points || 0) / 300, 30); // Max 30 points for scoring
+  score += (stats.titles || 0) * 15; // 15 points per championship
+  score += (stats.mvps || 0) * 10; // 10 points per MVP
+  score += (stats.allstars || 0) * 2; // 2 points per All-Star
+  
+  // Longevity
+  score += Math.min((game.career.seasons?.length || 0), 20); // Max 20 for longevity
+  
+  // Hall of Fame bonus
+  if (game.retirementCelebration?.hofResult?.inducted) {
+    score += 20;
+    if (game.retirementCelebration.hofResult.rank <= 10) score += 10;
+  }
+  
+  return Math.min(Math.round(score), 100);
+}
+
+function getLegacyColor(score) {
+  if (score >= 90) return '#ffd700'; // Gold
+  if (score >= 75) return '#c0c0c0'; // Silver  
+  if (score >= 60) return '#cd7f32'; // Bronze
+  return '#6b7280'; // Gray
+}
 
 // ---------- Persistence ----------
 function saveGame(game){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(game)); }catch{} }
