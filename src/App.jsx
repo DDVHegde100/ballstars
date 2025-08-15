@@ -22,22 +22,269 @@ const formatMoney = (amount) => {
   }
 };
 
-// Generate random player appearance
+// Generate random player appearance with comprehensive customization
 const generateAppearance = () => {
-  const skinTones = ['#F5DEB3', '#DEB887', '#D2B48C', '#BC9A6A', '#A0522D', '#8B4513', '#654321'];
-  const hairColors = ['#000000', '#2F1B14', '#8B4513', '#D2691E', '#DAA520', '#FFD700', '#B22222', '#FFFFFF'];
-  const eyeColors = ['#8B4513', '#654321', '#4682B4', '#228B22', '#808080', '#000000'];
+  const skinTones = [
+    '#F5DEB3', '#DEB887', '#D2B48C', '#BC9A6A', 
+    '#A0522D', '#8B4513', '#654321', '#F4C2A1',
+    '#E6B887', '#C8956D', '#8D5524', '#5D4037'
+  ];
+  
+  const hairStyles = [
+    'buzz', 'short', 'medium', 'long', 'curly', 'afro', 
+    'fade', 'mohawk', 'bald', 'ponytail', 'dreadlocks', 'waves'
+  ];
+  
+  const hairColors = [
+    '#000000', '#2F1B14', '#8B4513', '#D2691E', 
+    '#DAA520', '#FFD700', '#B22222', '#FFFFFF', 
+    '#654321', '#4A4A4A', '#8B0000', '#2E2E2E'
+  ];
+  
+  const eyeColors = [
+    '#8B4513', '#654321', '#4682B4', '#228B22', 
+    '#808080', '#000000', '#32CD32', '#4169E1',
+    '#20B2AA', '#8A2BE2', '#A0522D', '#2E8B57'
+  ];
+  
+  const faceShapes = ['oval', 'round', 'square', 'heart', 'diamond', 'oblong'];
+  const noseTypes = ['small', 'medium', 'large', 'wide', 'narrow', 'button', 'hooked'];
+  const facialHairStyles = ['none', 'mustache', 'goatee', 'full_beard', 'stubble', 'soul_patch', 'mutton_chops'];
+  const expressions = ['neutral', 'smile', 'smirk', 'serious', 'confident', 'determined'];
   
   return {
     skin: pick(skinTones),
-    hair: pick(hairColors),
+    hairStyle: pick(hairStyles),
+    hairColor: pick(hairColors),
     eyes: pick(eyeColors),
-    features: {
-      faceShape: pick(['oval', 'round', 'square', 'heart']),
-      nose: pick(['small', 'medium', 'large']),
-      eyebrows: pick(['thin', 'medium', 'thick'])
+    faceShape: pick(faceShapes),
+    nose: pick(noseTypes),
+    facialHair: pick(facialHairStyles),
+    expression: pick(expressions),
+    eyebrows: pick(['thin', 'medium', 'thick', 'bushy']),
+    jawline: pick(['soft', 'defined', 'strong', 'rounded'])
+  };
+};
+
+// Create SVG avatar based on appearance
+const createAvatarSVG = (appearance, size = 120) => {
+  const { skin, hairStyle, hairColor, eyes, faceShape, nose, facialHair, expression, eyebrows, jawline } = appearance;
+  
+  // Face shape paths
+  const getFaceShape = (shape) => {
+    const baseWidth = size * 0.8;
+    const baseHeight = size * 0.9;
+    const centerX = size / 2;
+    const centerY = size / 2;
+    
+    switch (shape) {
+      case 'oval':
+        return `M ${centerX - baseWidth/2.5} ${centerY - baseHeight/2.5} 
+                Q ${centerX - baseWidth/2.5} ${centerY - baseHeight/2} ${centerX} ${centerY - baseHeight/2}
+                Q ${centerX + baseWidth/2.5} ${centerY - baseHeight/2} ${centerX + baseWidth/2.5} ${centerY - baseHeight/2.5}
+                Q ${centerX + baseWidth/2.5} ${centerY + baseHeight/2.5} ${centerX} ${centerY + baseHeight/2}
+                Q ${centerX - baseWidth/2.5} ${centerY + baseHeight/2.5} ${centerX - baseWidth/2.5} ${centerY - baseHeight/2.5} Z`;
+      case 'round':
+        return `M ${centerX} ${centerY - baseHeight/2.2} 
+                A ${baseWidth/2.2} ${baseHeight/2.2} 0 1 1 ${centerX} ${centerY + baseHeight/2.2}
+                A ${baseWidth/2.2} ${baseHeight/2.2} 0 1 1 ${centerX} ${centerY - baseHeight/2.2} Z`;
+      case 'square':
+        return `M ${centerX - baseWidth/2.5} ${centerY - baseHeight/2.5}
+                L ${centerX + baseWidth/2.5} ${centerY - baseHeight/2.5}
+                Q ${centerX + baseWidth/2.3} ${centerY + baseHeight/2.5} ${centerX} ${centerY + baseHeight/2}
+                Q ${centerX - baseWidth/2.3} ${centerY + baseHeight/2.5} ${centerX - baseWidth/2.5} ${centerY - baseHeight/2.5} Z`;
+      case 'heart':
+        return `M ${centerX} ${centerY + baseHeight/2.2}
+                Q ${centerX - baseWidth/2.5} ${centerY + baseHeight/3} ${centerX - baseWidth/2.5} ${centerY - baseHeight/4}
+                Q ${centerX - baseWidth/2.5} ${centerY - baseHeight/2} ${centerX} ${centerY - baseHeight/2.5}
+                Q ${centerX + baseWidth/2.5} ${centerY - baseHeight/2} ${centerX + baseWidth/2.5} ${centerY - baseHeight/4}
+                Q ${centerX + baseWidth/2.5} ${centerY + baseHeight/3} ${centerX} ${centerY + baseHeight/2.2} Z`;
+      default:
+        return getFaceShape('oval');
     }
   };
+  
+  // Hair style paths
+  const getHairStyle = (style, color) => {
+    const centerX = size / 2;
+    const hairTop = size * 0.05;
+    const hairWidth = size * 0.85;
+    
+    if (style === 'bald') return '';
+    
+    const hairPath = (() => {
+      switch (style) {
+        case 'buzz':
+          return `M ${centerX - hairWidth/3} ${hairTop + 10} 
+                  Q ${centerX} ${hairTop} ${centerX + hairWidth/3} ${hairTop + 10}
+                  L ${centerX + hairWidth/2.5} ${hairTop + 25}
+                  Q ${centerX} ${hairTop + 15} ${centerX - hairWidth/2.5} ${hairTop + 25} Z`;
+        case 'short':
+          return `M ${centerX - hairWidth/2.5} ${hairTop + 8} 
+                  Q ${centerX} ${hairTop - 5} ${centerX + hairWidth/2.5} ${hairTop + 8}
+                  L ${centerX + hairWidth/2.5} ${hairTop + 35}
+                  Q ${centerX} ${hairTop + 20} ${centerX - hairWidth/2.5} ${hairTop + 35} Z`;
+        case 'afro':
+          return `M ${centerX} ${hairTop - 10} 
+                  A ${hairWidth/1.8} ${hairWidth/2.2} 0 1 1 ${centerX + 0.1} ${hairTop - 10} Z`;
+        case 'curly':
+          return `M ${centerX - hairWidth/2.3} ${hairTop} 
+                  Q ${centerX - hairWidth/3} ${hairTop - 15} ${centerX} ${hairTop - 8}
+                  Q ${centerX + hairWidth/3} ${hairTop - 15} ${centerX + hairWidth/2.3} ${hairTop}
+                  L ${centerX + hairWidth/2.5} ${hairTop + 40}
+                  Q ${centerX} ${hairTop + 25} ${centerX - hairWidth/2.5} ${hairTop + 40} Z`;
+        case 'fade':
+          return `M ${centerX - hairWidth/2.8} ${hairTop + 12} 
+                  Q ${centerX} ${hairTop - 2} ${centerX + hairWidth/2.8} ${hairTop + 12}
+                  L ${centerX + hairWidth/3} ${hairTop + 30}
+                  Q ${centerX} ${hairTop + 18} ${centerX - hairWidth/3} ${hairTop + 30} Z`;
+        default:
+          return getHairStyle('short', color);
+      }
+    })();
+    
+    return `<path d="${hairPath}" fill="${color}" stroke="${color}" stroke-width="1"/>`;
+  };
+  
+  // Eye generation
+  const getEyes = (eyeColor, expression) => {
+    const leftEyeX = size * 0.35;
+    const rightEyeX = size * 0.65;
+    const eyeY = size * 0.4;
+    const eyeWidth = 12;
+    const eyeHeight = expression === 'smile' ? 8 : 10;
+    
+    return `
+      <ellipse cx="${leftEyeX}" cy="${eyeY}" rx="${eyeWidth}" ry="${eyeHeight}" fill="white" stroke="#333" stroke-width="1"/>
+      <circle cx="${leftEyeX}" cy="${eyeY}" r="6" fill="${eyeColor}"/>
+      <circle cx="${leftEyeX + 2}" cy="${eyeY - 1}" r="2" fill="black"/>
+      <circle cx="${leftEyeX + 3}" cy="${eyeY - 2}" r="1" fill="white"/>
+      
+      <ellipse cx="${rightEyeX}" cy="${eyeY}" rx="${eyeWidth}" ry="${eyeHeight}" fill="white" stroke="#333" stroke-width="1"/>
+      <circle cx="${rightEyeX}" cy="${eyeY}" r="6" fill="${eyeColor}"/>
+      <circle cx="${rightEyeX + 2}" cy="${eyeY - 1}" r="2" fill="black"/>
+      <circle cx="${rightEyeX + 3}" cy="${eyeY - 2}" r="1" fill="white"/>
+    `;
+  };
+  
+  // Eyebrow generation
+  const getEyebrows = (type, hairColor) => {
+    const leftBrowX = size * 0.35;
+    const rightBrowX = size * 0.65;
+    const browY = size * 0.32;
+    
+    const thickness = type === 'thick' ? 4 : type === 'medium' ? 3 : 2;
+    const length = type === 'bushy' ? 18 : 15;
+    
+    return `
+      <path d="M ${leftBrowX - length/2} ${browY} Q ${leftBrowX} ${browY - 3} ${leftBrowX + length/2} ${browY}" 
+            stroke="${hairColor}" stroke-width="${thickness}" fill="none" stroke-linecap="round"/>
+      <path d="M ${rightBrowX - length/2} ${browY} Q ${rightBrowX} ${browY - 3} ${rightBrowX + length/2} ${browY}" 
+            stroke="${hairColor}" stroke-width="${thickness}" fill="none" stroke-linecap="round"/>
+    `;
+  };
+  
+  // Nose generation
+  const getNose = (type, skinColor) => {
+    const noseX = size / 2;
+    const noseY = size * 0.5;
+    
+    switch (type) {
+      case 'small':
+        return `<ellipse cx="${noseX}" cy="${noseY}" rx="3" ry="6" fill="${skinColor}" stroke="#999" stroke-width="0.5"/>`;
+      case 'large':
+        return `<ellipse cx="${noseX}" cy="${noseY}" rx="8" ry="12" fill="${skinColor}" stroke="#999" stroke-width="1"/>`;
+      case 'wide':
+        return `<ellipse cx="${noseX}" cy="${noseY}" rx="10" ry="8" fill="${skinColor}" stroke="#999" stroke-width="1"/>`;
+      case 'button':
+        return `<circle cx="${noseX}" cy="${noseY}" r="5" fill="${skinColor}" stroke="#999" stroke-width="0.5"/>`;
+      default:
+        return `<ellipse cx="${noseX}" cy="${noseY}" rx="5" ry="8" fill="${skinColor}" stroke="#999" stroke-width="0.8"/>`;
+    }
+  };
+  
+  // Mouth/Expression generation
+  const getMouth = (expression, skinColor) => {
+    const mouthX = size / 2;
+    const mouthY = size * 0.65;
+    
+    switch (expression) {
+      case 'smile':
+        return `<path d="M ${mouthX - 15} ${mouthY} Q ${mouthX} ${mouthY + 8} ${mouthX + 15} ${mouthY}" 
+                stroke="#D4696B" stroke-width="3" fill="none" stroke-linecap="round"/>`;
+      case 'smirk':
+        return `<path d="M ${mouthX - 12} ${mouthY} Q ${mouthX + 5} ${mouthY + 4} ${mouthX + 15} ${mouthY - 2}" 
+                stroke="#D4696B" stroke-width="2" fill="none" stroke-linecap="round"/>`;
+      case 'serious':
+        return `<line x1="${mouthX - 12}" y1="${mouthY}" x2="${mouthX + 12}" y2="${mouthY}" 
+                stroke="#D4696B" stroke-width="3" stroke-linecap="round"/>`;
+      default:
+        return `<path d="M ${mouthX - 10} ${mouthY} Q ${mouthX} ${mouthY + 2} ${mouthX + 10} ${mouthY}" 
+                stroke="#D4696B" stroke-width="2" fill="none" stroke-linecap="round"/>`;
+    }
+  };
+  
+  // Facial hair generation
+  const getFacialHair = (style, hairColor) => {
+    const centerX = size / 2;
+    const chinY = size * 0.8;
+    
+    if (style === 'none') return '';
+    
+    switch (style) {
+      case 'mustache':
+        return `<path d="M ${centerX - 15} ${size * 0.6} Q ${centerX} ${size * 0.58} ${centerX + 15} ${size * 0.6}" 
+                stroke="${hairColor}" stroke-width="4" fill="none" stroke-linecap="round"/>`;
+      case 'goatee':
+        return `<ellipse cx="${centerX}" cy="${chinY - 5}" rx="8" ry="12" fill="${hairColor}"/>`;
+      case 'full_beard':
+        return `<path d="M ${centerX - 25} ${size * 0.6} 
+                Q ${centerX - 30} ${chinY} ${centerX} ${chinY + 5}
+                Q ${centerX + 30} ${chinY} ${centerX + 25} ${size * 0.6}" 
+                fill="${hairColor}"/>`;
+      case 'stubble':
+        return `<circle cx="${centerX - 10}" cy="${chinY - 8}" r="1" fill="${hairColor}" opacity="0.6"/>
+                <circle cx="${centerX - 5}" cy="${chinY - 5}" r="1" fill="${hairColor}" opacity="0.6"/>
+                <circle cx="${centerX}" cy="${chinY - 3}" r="1" fill="${hairColor}" opacity="0.6"/>
+                <circle cx="${centerX + 5}" cy="${chinY - 5}" r="1" fill="${hairColor}" opacity="0.6"/>
+                <circle cx="${centerX + 10}" cy="${chinY - 8}" r="1" fill="${hairColor}" opacity="0.6"/>`;
+      default:
+        return '';
+    }
+  };
+  
+  const facePath = getFaceShape(faceShape);
+  const hairSVG = getHairStyle(hairStyle, hairColor);
+  const eyesSVG = getEyes(eyes, expression);
+  const eyebrowsSVG = getEyebrows(eyebrows, hairColor);
+  const noseSVG = getNose(nose, skin);
+  const mouthSVG = getMouth(expression, skin);
+  const facialHairSVG = getFacialHair(facialHair, hairColor);
+  
+  return `
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+      <!-- Face -->
+      <path d="${facePath}" fill="${skin}" stroke="#999" stroke-width="1"/>
+      
+      <!-- Hair -->
+      ${hairSVG}
+      
+      <!-- Eyebrows -->
+      ${eyebrowsSVG}
+      
+      <!-- Eyes -->
+      ${eyesSVG}
+      
+      <!-- Nose -->
+      ${noseSVG}
+      
+      <!-- Mouth -->
+      ${mouthSVG}
+      
+      <!-- Facial Hair -->
+      ${facialHairSVG}
+    </svg>
+  `;
 };
 
 // Convert hex color to RGB values for glassmorphism effects
@@ -597,8 +844,11 @@ function newPlayer(custom){
   const arch = custom?.archetype || pickArchetype();
   const ratings = baseRatings(arch);
   const rookie = rookieContract(ratings.overall);
+  const appearance = custom?.appearance || generateAppearance();
+  
   return {
     name, age, archetype: arch, ratings, potential: clamp(ratings.overall + irnd(4,15), 70, 99),
+    appearance,
     morale: 70, health: 100, peak: 90, fame: 5, followers: irnd(1000, 5000), cash: 50, 
     endorsements: [], shoeDeals: [], premiumServices: [],
     team: rookie.team, arena: genArena(rookie.team), jersey: irnd(0,99),
@@ -1215,6 +1465,15 @@ export default function BasketballLife(){
   }, [game?.team]);
 
   function resetAll(){ setGame(newPlayer()); setTab("Home"); pushToast("New career started!"); }
+  
+  // Handle avatar appearance changes
+  function handleAppearanceChange(newAppearance) {
+    setGame(prev => ({
+      ...prev,
+      appearance: newAppearance
+    }));
+    pushToast("Avatar updated!");
+  }
 
   function pushToast(t){ setToast({ id: cryptoRandomId(), text: t}); setTimeout(()=>setToast(null), 2200); }
   
@@ -2092,7 +2351,14 @@ export default function BasketballLife(){
 
   return (
     <div className="fade-in">
-      <Header game={game} onReset={resetAll} onExport={exportSave} onImport={()=>setShowImport(true)} onRetire={retireNow} />
+      <Header 
+        game={game} 
+        onReset={resetAll} 
+        onExport={exportSave} 
+        onImport={()=>setShowImport(true)} 
+        onRetire={retireNow}
+        onAppearanceChange={handleAppearanceChange}
+      />
 
       <Tabs current={tab} onSelect={setTab} tabs={["Home","Training","Health","Team","Contracts","Awards","History","Analytics","League"]} />
 
@@ -2170,36 +2436,84 @@ export default function BasketballLife(){
 }
 
 // ---------- Subcomponents ----------
-function Header({ game, onReset, onExport, onImport, onRetire }){
+function Header({ game, onReset, onExport, onImport, onRetire, onAppearanceChange }){
+  const [showProfileChanger, setShowProfileChanger] = useState(false);
   const teamInfo = NBA_TEAMS[game.team];
   const teamName = teamInfo ? teamInfo.name : game.team;
   
+  const handleAppearanceChange = (newAppearance) => {
+    onAppearanceChange(newAppearance);
+  };
+  
   return (
-    <div className="header">
-      <div className="header-content">
-        <div className="player-info">
-          <div className="player-avatar">
-            {game.name.split(' ').map(n => n[0]).join('')}
-          </div>
-          <div className="player-details">
-            <h1>{game.name}</h1>
-            <div className="player-meta">
-              <span>{teamName}</span>
-              <span>#{game.jersey}</span>
-              <span>{game.archetype}</span>
-              <span>{game.ratings.overall} OVR</span>
-              <span>${game.cash}k</span>
+    <>
+      <div className="header">
+        <div className="header-content">
+          <div className="player-info">
+            <div 
+              className="player-avatar" 
+              onClick={() => setShowProfileChanger(true)}
+              style={{ 
+                cursor: 'pointer',
+                position: 'relative',
+                padding: 0,
+                borderRadius: '50%',
+                overflow: 'visible'
+              }}
+              title="Click to customize avatar"
+            >
+              <Avatar 
+                appearance={game.appearance || generateAppearance()} 
+                size={64} 
+              />
+              <div style={{
+                position: 'absolute',
+                bottom: -2,
+                right: -2,
+                width: '20px',
+                height: '20px',
+                borderRadius: '50%',
+                background: 'var(--team-primary)',
+                color: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '10px',
+                fontWeight: 'bold',
+                border: '2px solid rgba(255, 255, 255, 0.9)',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)'
+              }}>
+                ✏️
+              </div>
+            </div>
+            <div className="player-details">
+              <h1>{game.name}</h1>
+              <div className="player-meta">
+                <span>{teamName}</span>
+                <span>#{game.jersey}</span>
+                <span>{game.archetype}</span>
+                <span>{game.ratings.overall} OVR</span>
+                <span>{formatMoney(game.cash)}</span>
+              </div>
             </div>
           </div>
-        </div>
-        <div className="header-actions">
-          <button className="btn btn-secondary btn-sm" onClick={onExport}>Export</button>
-          <button className="btn btn-secondary btn-sm" onClick={onImport}>Import</button>
-          <button className="btn btn-ghost btn-sm" onClick={onReset}>New Career</button>
-          {!game.retired && <button className="btn btn-sm" style={{background: '#dc2626', color: 'white'}} onClick={onRetire}>Retire</button>}
+          <div className="header-actions">
+            <button className="btn btn-secondary btn-sm" onClick={onExport}>Export</button>
+            <button className="btn btn-secondary btn-sm" onClick={onImport}>Import</button>
+            <button className="btn btn-ghost btn-sm" onClick={onReset}>New Career</button>
+            {!game.retired && <button className="btn btn-sm" style={{background: '#dc2626', color: 'white'}} onClick={onRetire}>Retire</button>}
+          </div>
         </div>
       </div>
-    </div>
+      
+      {showProfileChanger && (
+        <ProfilePictureChanger
+          currentAppearance={game.appearance || generateAppearance()}
+          onAppearanceChange={handleAppearanceChange}
+          onClose={() => setShowProfileChanger(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -3819,6 +4133,269 @@ function Toast({ text }){
   );
 }
 
+// Avatar Component
+function Avatar({ appearance, size = 120, className = "" }) {
+  const svgContent = createAvatarSVG(appearance, size);
+  
+  return (
+    <div 
+      className={`avatar ${className}`}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        overflow: 'hidden',
+        border: '3px solid rgba(255, 255, 255, 0.2)',
+        background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05))',
+        backdropFilter: 'blur(10px)',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)'
+      }}
+      dangerouslySetInnerHTML={{ __html: svgContent }}
+    />
+  );
+}
+
+// Profile Picture Changer Component
+function ProfilePictureChanger({ currentAppearance, onAppearanceChange, onClose }) {
+  const [previewAppearance, setPreviewAppearance] = useState(currentAppearance);
+  const [activeCategory, setActiveCategory] = useState('face');
+  
+  const categories = {
+    face: {
+      name: 'Face',
+      options: {
+        skin: {
+          label: 'Skin Tone',
+          values: [
+            '#F5DEB3', '#DEB887', '#D2B48C', '#BC9A6A', 
+            '#A0522D', '#8B4513', '#654321', '#F4C2A1',
+            '#E6B887', '#C8956D', '#8D5524', '#5D4037'
+          ]
+        },
+        faceShape: {
+          label: 'Face Shape',
+          values: ['oval', 'round', 'square', 'heart', 'diamond', 'oblong']
+        }
+      }
+    },
+    hair: {
+      name: 'Hair',
+      options: {
+        hairStyle: {
+          label: 'Hair Style',
+          values: ['buzz', 'short', 'medium', 'long', 'curly', 'afro', 'fade', 'mohawk', 'bald', 'ponytail', 'dreadlocks', 'waves']
+        },
+        hairColor: {
+          label: 'Hair Color',
+          values: [
+            '#000000', '#2F1B14', '#8B4513', '#D2691E', 
+            '#DAA520', '#FFD700', '#B22222', '#FFFFFF', 
+            '#654321', '#4A4A4A', '#8B0000', '#2E2E2E'
+          ]
+        }
+      }
+    },
+    features: {
+      name: 'Features',
+      options: {
+        eyes: {
+          label: 'Eye Color',
+          values: [
+            '#8B4513', '#654321', '#4682B4', '#228B22', 
+            '#808080', '#000000', '#32CD32', '#4169E1',
+            '#20B2AA', '#8A2BE2', '#A0522D', '#2E8B57'
+          ]
+        },
+        nose: {
+          label: 'Nose Type',
+          values: ['small', 'medium', 'large', 'wide', 'narrow', 'button', 'hooked']
+        },
+        eyebrows: {
+          label: 'Eyebrows',
+          values: ['thin', 'medium', 'thick', 'bushy']
+        }
+      }
+    },
+    expression: {
+      name: 'Expression',
+      options: {
+        expression: {
+          label: 'Expression',
+          values: ['neutral', 'smile', 'smirk', 'serious', 'confident', 'determined']
+        },
+        facialHair: {
+          label: 'Facial Hair',
+          values: ['none', 'mustache', 'goatee', 'full_beard', 'stubble', 'soul_patch', 'mutton_chops']
+        }
+      }
+    }
+  };
+  
+  const updateFeature = (feature, value) => {
+    setPreviewAppearance(prev => ({
+      ...prev,
+      [feature]: value
+    }));
+  };
+  
+  const randomizeAll = () => {
+    setPreviewAppearance(generateAppearance());
+  };
+  
+  const saveChanges = () => {
+    onAppearanceChange(previewAppearance);
+    onClose();
+  };
+  
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+      <div className="panel" style={{ 
+        maxWidth: '800px', 
+        width: '90%', 
+        maxHeight: '90vh', 
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column'
+      }}>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          marginBottom: '20px',
+          paddingBottom: '15px',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+          <h2 style={{ color: 'var(--team-primary)', margin: 0 }}>Customize Avatar</h2>
+          <button 
+            className="btn btn-ghost btn-sm" 
+            onClick={onClose}
+            style={{ padding: '8px 12px' }}
+          >
+            ✕
+          </button>
+        </div>
+        
+        <div style={{ display: 'flex', gap: '24px', flex: 1, overflow: 'hidden' }}>
+          {/* Preview Section */}
+          <div style={{ 
+            flex: '0 0 200px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '16px'
+          }}>
+            <Avatar appearance={previewAppearance} size={160} />
+            
+            <div style={{ display: 'flex', gap: '8px', flexDirection: 'column', width: '100%' }}>
+              <button 
+                className="btn btn-secondary btn-sm" 
+                onClick={randomizeAll}
+                style={{ fontSize: '12px' }}
+              >
+                🎲 Randomize All
+              </button>
+              <button 
+                className="btn btn-primary" 
+                onClick={saveChanges}
+                style={{ fontSize: '14px', padding: '12px' }}
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+          
+          {/* Customization Options */}
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {/* Category Tabs */}
+            <div style={{ 
+              display: 'flex', 
+              gap: '8px', 
+              marginBottom: '16px',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+              paddingBottom: '12px'
+            }}>
+              {Object.entries(categories).map(([key, category]) => (
+                <button
+                  key={key}
+                  className={`btn btn-sm ${activeCategory === key ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => setActiveCategory(key)}
+                  style={{ fontSize: '12px', padding: '8px 12px' }}
+                >
+                  {category.name}
+                </button>
+              ))}
+            </div>
+            
+            {/* Options for Active Category */}
+            <div style={{ 
+              flex: 1, 
+              overflow: 'auto',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none'
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {Object.entries(categories[activeCategory].options).map(([optionKey, option]) => (
+                  <div key={optionKey}>
+                    <div style={{ 
+                      fontSize: '14px', 
+                      fontWeight: '600', 
+                      marginBottom: '8px',
+                      color: 'var(--text-secondary)'
+                    }}>
+                      {option.label}
+                    </div>
+                    
+                    <div style={{ 
+                      display: 'grid', 
+                      gridTemplateColumns: optionKey.includes('Color') || optionKey === 'skin' ? 
+                        'repeat(6, 1fr)' : 'repeat(3, 1fr)',
+                      gap: '8px'
+                    }}>
+                      {option.values.map((value, index) => {
+                        const isSelected = previewAppearance[optionKey] === value;
+                        const isColor = optionKey.includes('Color') || optionKey === 'skin';
+                        
+                        return (
+                          <button
+                            key={index}
+                            onClick={() => updateFeature(optionKey, value)}
+                            style={{
+                              padding: isColor ? '0' : '8px 12px',
+                              borderRadius: '8px',
+                              border: isSelected ? 
+                                '3px solid var(--team-primary)' : 
+                                '2px solid rgba(255, 255, 255, 0.1)',
+                              background: isColor ? value : 
+                                isSelected ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                              color: isColor ? 'transparent' : 'var(--text-primary)',
+                              fontSize: '12px',
+                              fontWeight: isSelected ? '600' : '400',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease',
+                              aspectRatio: isColor ? '1' : 'auto',
+                              minHeight: isColor ? '32px' : '36px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              textTransform: 'capitalize'
+                            }}
+                          >
+                            {isColor ? '' : value.replace('_', ' ')}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AwardsPopup({ awards, season, champion, finalsMVP, onClose }){
   const getAwardEmoji = (award) => {
     switch(award) {
@@ -3859,4 +4436,19 @@ function cap(s){ return s.slice(0,1).toUpperCase()+s.slice(1); }
 
 // ---------- Persistence ----------
 function saveGame(game){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(game)); }catch{} }
-function loadGame(){ try{ const s = localStorage.getItem(STORAGE_KEY); return s? JSON.parse(s): null; }catch{ return null; } }
+function loadGame(){ 
+  try{ 
+    const s = localStorage.getItem(STORAGE_KEY); 
+    if (!s) return null;
+    const game = JSON.parse(s);
+    
+    // Backward compatibility: Add appearance if missing
+    if (game && !game.appearance) {
+      game.appearance = generateAppearance();
+    }
+    
+    return game;
+  } catch { 
+    return null; 
+  } 
+}
