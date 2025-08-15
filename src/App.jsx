@@ -45,96 +45,160 @@ const formatMoney = (amount) => {
 const getCurrentYear = (season) => 2024 + Math.floor((season - 1) / 1);
 const getCurrentAge = (birthYear, currentSeason) => getCurrentYear(currentSeason) - birthYear;
 
-// Enhanced team ownership opportunities with realistic pricing
+// Enhanced team ownership opportunities with realistic pricing (hundreds of millions)
 const TEAM_OWNERSHIP_OPPORTUNITIES = [
   {
     id: 'lakers',
     team: 'Los Angeles Lakers',
-    price: 5800, // $5.8B
-    revenue: 450, // $450M annually
+    price: 580000, // $580B
+    revenue: 45000, // $45B annually
     location: 'Los Angeles',
     marketSize: 'Large',
     fanBase: 95,
     championships: 17,
-    difficulty: 'Medium'
+    difficulty: 'Medium',
+    currentRecord: { wins: 47, losses: 35 },
+    previousRevenue: 42000
   },
   {
     id: 'warriors',
     team: 'Golden State Warriors', 
-    price: 6200, // $6.2B
-    revenue: 500, // $500M annually
+    price: 620000, // $620B
+    revenue: 50000, // $50B annually
     location: 'San Francisco',
     marketSize: 'Large',
     fanBase: 90,
     championships: 7,
-    difficulty: 'Hard'
+    difficulty: 'Hard',
+    currentRecord: { wins: 44, losses: 38 },
+    previousRevenue: 48000
   },
   {
     id: 'knicks',
     team: 'New York Knicks',
-    price: 6500, // $6.5B
-    revenue: 520, // $520M annually
+    price: 650000, // $650B
+    revenue: 52000, // $52B annually
     location: 'New York',
     marketSize: 'Large',
     fanBase: 88,
     championships: 2,
-    difficulty: 'Hard'
+    difficulty: 'Hard',
+    currentRecord: { wins: 50, losses: 32 },
+    previousRevenue: 49000
   },
   {
     id: 'bulls',
     team: 'Chicago Bulls',
-    price: 4100, // $4.1B
-    revenue: 350, // $350M annually
+    price: 410000, // $410B
+    revenue: 35000, // $35B annually
     location: 'Chicago',
     marketSize: 'Large',
     fanBase: 85,
     championships: 6,
-    difficulty: 'Medium'
+    difficulty: 'Medium',
+    currentRecord: { wins: 39, losses: 43 },
+    previousRevenue: 33000
   },
   {
     id: 'celtics',
     team: 'Boston Celtics',
-    price: 4800, // $4.8B
-    revenue: 380, // $380M annually
+    price: 480000, // $480B
+    revenue: 38000, // $38B annually
     location: 'Boston',
     marketSize: 'Medium',
     fanBase: 92,
     championships: 18,
-    difficulty: 'Medium'
+    difficulty: 'Medium',
+    currentRecord: { wins: 64, losses: 18 },
+    previousRevenue: 36000
   },
   {
     id: 'heat',
     team: 'Miami Heat',
-    price: 3500, // $3.5B
-    revenue: 300, // $300M annually
+    price: 350000, // $350B
+    revenue: 30000, // $30B annually
     location: 'Miami',
     marketSize: 'Medium',
     fanBase: 78,
     championships: 3,
-    difficulty: 'Easy'
+    difficulty: 'Easy',
+    currentRecord: { wins: 46, losses: 36 },
+    previousRevenue: 28000
   },
   {
     id: 'spurs',
     team: 'San Antonio Spurs',
-    price: 2800, // $2.8B
-    revenue: 250, // $250M annually
+    price: 280000, // $280B
+    revenue: 25000, // $25B annually
     location: 'San Antonio',
     marketSize: 'Small',
     fanBase: 75,
     championships: 5,
-    difficulty: 'Easy'
+    difficulty: 'Easy',
+    currentRecord: { wins: 22, losses: 60 },
+    previousRevenue: 23000
   },
   {
     id: 'pelicans',
     team: 'New Orleans Pelicans',
-    price: 2200, // $2.2B
-    revenue: 200, // $200M annually
+    price: 220000, // $220B
+    revenue: 20000, // $20B annually
     location: 'New Orleans',
     marketSize: 'Small',
     fanBase: 65,
     championships: 0,
-    difficulty: 'Easy'
+    difficulty: 'Easy',
+    currentRecord: { wins: 49, losses: 33 },
+    previousRevenue: 18000
   }
+];
+
+// Real NBA players and generated players for trading
+const AVAILABLE_PLAYERS = [
+  // Superstars
+  { name: 'LeBron James', overall: 92, age: 39, salary: 4700, position: 'SF', team: 'Lakers', stats: { ppg: 25.7, rpg: 7.3, apg: 8.3, fgPct: 0.540 }, tradeCost: 25000 },
+  { name: 'Stephen Curry', overall: 90, age: 36, salary: 5100, position: 'PG', team: 'Warriors', stats: { ppg: 26.4, rpg: 4.5, apg: 5.1, fgPct: 0.427 }, tradeCost: 22000 },
+  { name: 'Giannis Antetokounmpo', overall: 95, age: 29, salary: 4800, position: 'PF', team: 'Bucks', stats: { ppg: 30.4, rpg: 11.5, apg: 6.5, fgPct: 0.553 }, tradeCost: 35000 },
+  { name: 'Luka Dončić', overall: 93, age: 25, salary: 4000, position: 'PG', team: 'Mavericks', stats: { ppg: 32.4, rpg: 8.6, apg: 9.1, fgPct: 0.487 }, tradeCost: 32000 },
+  { name: 'Jayson Tatum', overall: 91, age: 26, salary: 4600, position: 'SF', team: 'Celtics', stats: { ppg: 26.9, rpg: 8.1, apg: 4.9, fgPct: 0.471 }, tradeCost: 28000 },
+  { name: 'Kevin Durant', overall: 89, age: 35, salary: 4700, position: 'SF', team: 'Suns', stats: { ppg: 27.1, rpg: 6.6, apg: 5.0, fgPct: 0.523 }, tradeCost: 24000 },
+  { name: 'Nikola Jokić', overall: 94, age: 29, salary: 4700, position: 'C', team: 'Nuggets', stats: { ppg: 26.4, rpg: 12.4, apg: 9.0, fgPct: 0.583 }, tradeCost: 33000 },
+  { name: 'Joel Embiid', overall: 92, age: 30, salary: 4700, position: 'C', team: '76ers', stats: { ppg: 34.7, rpg: 11.0, apg: 5.6, fgPct: 0.548 }, tradeCost: 30000 },
+  { name: 'Jaylen Brown', overall: 88, age: 27, salary: 4600, position: 'SG', team: 'Celtics', stats: { ppg: 23.0, rpg: 5.5, apg: 3.6, fgPct: 0.499 }, tradeCost: 25000 },
+  { name: 'Devin Booker', overall: 89, age: 27, salary: 4900, position: 'SG', team: 'Suns', stats: { ppg: 27.1, rpg: 4.5, apg: 6.9, fgPct: 0.466 }, tradeCost: 26000 },
+  
+  // All-Stars
+  { name: 'Anthony Davis', overall: 87, age: 31, salary: 4000, position: 'PF', team: 'Lakers', stats: { ppg: 24.7, rpg: 12.6, apg: 3.5, fgPct: 0.563 }, tradeCost: 20000 },
+  { name: 'Jimmy Butler', overall: 86, age: 34, salary: 4900, position: 'SF', team: 'Heat', stats: { ppg: 20.8, rpg: 5.3, apg: 5.0, fgPct: 0.493 }, tradeCost: 18000 },
+  { name: 'Kawhi Leonard', overall: 88, age: 33, salary: 4500, position: 'SF', team: 'Clippers', stats: { ppg: 23.7, rpg: 6.1, apg: 3.6, fgPct: 0.524 }, tradeCost: 22000 },
+  { name: 'Paul George', overall: 85, age: 34, salary: 4800, position: 'SF', team: 'Clippers', stats: { ppg: 22.6, rpg: 5.2, apg: 3.5, fgPct: 0.412 }, tradeCost: 19000 },
+  { name: 'Damian Lillard', overall: 87, age: 33, salary: 4500, position: 'PG', team: 'Bucks', stats: { ppg: 24.3, rpg: 4.4, apg: 7.0, fgPct: 0.427 }, tradeCost: 21000 },
+  
+  // Rising Stars
+  { name: 'Ja Morant', overall: 84, age: 25, salary: 3900, position: 'PG', team: 'Grizzlies', stats: { ppg: 25.1, rpg: 5.6, apg: 8.1, fgPct: 0.469 }, tradeCost: 16000 },
+  { name: 'Zion Williamson', overall: 83, age: 24, salary: 3100, position: 'PF', team: 'Pelicans', stats: { ppg: 22.9, rpg: 5.8, apg: 5.0, fgPct: 0.570 }, tradeCost: 15000 },
+  { name: 'Trae Young', overall: 82, age: 25, salary: 3700, position: 'PG', team: 'Hawks', stats: { ppg: 25.7, rpg: 2.8, apg: 10.8, fgPct: 0.433 }, tradeCost: 14000 },
+  { name: 'Tyler Herro', overall: 78, age: 24, salary: 2900, position: 'SG', team: 'Heat', stats: { ppg: 20.1, rpg: 5.4, apg: 4.2, fgPct: 0.439 }, tradeCost: 12000 },
+  
+  // Generated quality players
+  { name: 'Marcus Thompson', overall: 85, age: 28, salary: 3200, position: 'PG', team: 'Pacers', stats: { ppg: 18.7, rpg: 4.2, apg: 7.8, fgPct: 0.451 }, tradeCost: 13000 },
+  { name: 'DeAndre Williams', overall: 83, age: 26, salary: 2800, position: 'C', team: 'Magic', stats: { ppg: 16.4, rpg: 10.3, apg: 2.1, fgPct: 0.589 }, tradeCost: 11000 },
+  { name: 'Jamal Rodriguez', overall: 81, age: 29, salary: 2400, position: 'SG', team: 'Kings', stats: { ppg: 14.8, rpg: 3.6, apg: 3.2, fgPct: 0.423 }, tradeCost: 9000 },
+  { name: 'Terrell Jackson', overall: 84, age: 27, salary: 3000, position: 'SF', team: 'Hornets', stats: { ppg: 19.2, rpg: 6.7, apg: 4.8, fgPct: 0.478 }, tradeCost: 12500 },
+  { name: 'Kevin Martinez', overall: 80, age: 25, salary: 2200, position: 'PF', team: 'Pistons', stats: { ppg: 13.1, rpg: 8.4, apg: 2.6, fgPct: 0.512 }, tradeCost: 8000 }
+];
+
+// Team endorsement and sponsorship opportunities
+const TEAM_ENDORSEMENTS = [
+  { name: 'Nike Partnership', value: 15000, duration: 3, requirements: { fanSatisfaction: 80, mediaRating: 75 }, type: 'apparel' },
+  { name: 'Adidas Deal', value: 12000, duration: 3, requirements: { fanSatisfaction: 75, mediaRating: 70 }, type: 'apparel' },
+  { name: 'Coca-Cola Sponsorship', value: 8000, duration: 2, requirements: { attendance: 18000, mediaRating: 60 }, type: 'beverage' },
+  { name: 'Pepsi Partnership', value: 7500, duration: 2, requirements: { attendance: 17000, mediaRating: 65 }, type: 'beverage' },
+  { name: 'Samsung Arena Naming Rights', value: 25000, duration: 5, requirements: { facilityQuality: 85, fanSatisfaction: 80 }, type: 'naming' },
+  { name: 'Apple Technology Partnership', value: 18000, duration: 4, requirements: { socialMedia: 2000000, mediaRating: 80 }, type: 'technology' },
+  { name: 'Microsoft Cloud Services', value: 12000, duration: 3, requirements: { facilityQuality: 75, mediaRating: 70 }, type: 'technology' },
+  { name: 'FedEx Logistics Partnership', value: 6000, duration: 2, requirements: { fanSatisfaction: 70 }, type: 'logistics' },
+  { name: 'American Express Premium', value: 20000, duration: 4, requirements: { ticketPrices: 200, fanSatisfaction: 85 }, type: 'financial' }
 ];
 
 // Trade evaluation system
@@ -3110,29 +3174,32 @@ export default function BasketballLife(){
       });
     }
     
-    // Enhanced team ownership opportunities
-    if (player.cash >= 2000) { // Minimum $2B for smallest franchise
+    // Enhanced team ownership opportunities - ONLY if player doesn't already own a team
+    if (player.cash >= 220000 && (!player.postRetirement.ownedTeams || player.postRetirement.ownedTeams.length === 0)) {
       const availableTeams = TEAM_OWNERSHIP_OPPORTUNITIES.filter(teamOpp => 
-        !player.postRetirement.ownedTeams?.some(owned => owned.teamId === teamOpp.id) &&
         player.cash >= teamOpp.price
       );
       
-      availableTeams.forEach(teamOpp => {
+      // Only show one team opportunity at a time
+      if (availableTeams.length > 0) {
+        const selectedTeam = pick(availableTeams);
         opportunities.push({
           type: 'team_purchase',
-          team: teamOpp.team,
-          teamId: teamOpp.id,
-          cost: teamOpp.price,
-          location: teamOpp.location,
-          marketSize: teamOpp.marketSize,
-          fanBase: teamOpp.fanBase,
-          championships: teamOpp.championships,
-          difficulty: teamOpp.difficulty,
-          expectedRevenue: teamOpp.revenue,
-          requirements: { cash: teamOpp.price },
-          description: `Own the ${teamOpp.team} in ${teamOpp.location} - ${teamOpp.marketSize} market with ${teamOpp.fanBase}% fan loyalty`
+          team: selectedTeam.team,
+          teamId: selectedTeam.id,
+          cost: selectedTeam.price,
+          location: selectedTeam.location,
+          marketSize: selectedTeam.marketSize,
+          fanBase: selectedTeam.fanBase,
+          championships: selectedTeam.championships,
+          difficulty: selectedTeam.difficulty,
+          expectedRevenue: selectedTeam.revenue,
+          currentRecord: selectedTeam.currentRecord,
+          previousRevenue: selectedTeam.previousRevenue,
+          requirements: { cash: selectedTeam.price },
+          description: `Own the ${selectedTeam.team} in ${selectedTeam.location} - ${selectedTeam.marketSize} market with ${selectedTeam.fanBase}% fan loyalty. Previous season: ${selectedTeam.currentRecord.wins}-${selectedTeam.currentRecord.losses}`
         });
-      });
+      }
     }
     
     return opportunities;
@@ -3154,6 +3221,12 @@ export default function BasketballLife(){
       }
       
       if (position.type === 'team_purchase') {
+        // Check if player already owns a team
+        if (p.postRetirement.ownedTeams && p.postRetirement.ownedTeams.length > 0) {
+          pushToast("❌ You can only own one team at a time. Sell your current team first!", 'warning');
+          return p;
+        }
+        
         if (p.cash >= position.cost) {
           p.cash -= position.cost;
           
@@ -3179,6 +3252,7 @@ export default function BasketballLife(){
               attendance: irnd(15000, 22000), // 15k-22k average attendance
               merchandising: Math.round(teamOpp.revenue * 0.12 + irnd(-10, 15)),
               sponsorships: Math.round(teamOpp.revenue * 0.25 + irnd(-20, 30)),
+              endorsements: Math.round(teamOpp.revenue * 0.15 + irnd(-10, 20)),
               tvDeals: Math.round(teamOpp.revenue * 0.35 + irnd(-25, 40)),
               luxuryTaxPaid: 0,
               totalPayroll: irnd(120, 180) // $120-180M player salaries
@@ -3441,6 +3515,165 @@ export default function BasketballLife(){
           // Simulate one season for owned team
           simulateTeamSeason(team, p);
           break;
+          
+        case 'sell_team':
+          // Calculate sale price (95% of current value)
+          const teamSalePrice = Math.round(team.currentValue * 0.95);
+          
+          // Add to player's cash
+          p.cash += teamSalePrice;
+          
+          // Remove team from owned teams
+          p.postRetirement.ownedTeams.splice(teamIndex, 1);
+          
+          // Add to career timeline
+          p.career.timeline.push(event("Business", `Sold ${team.team} for ${formatMoney(teamSalePrice)}`));
+          
+          pushToast(`💸 Successfully sold ${team.team} for ${formatMoney(teamSalePrice)}!`, 'success');
+          break;
+
+        case 'trade_for_star':
+          const starPool = generateAvailableStars().slice(0, 5);
+          const targetStar = pick(starPool);
+          const starTradeCost = targetStar.tradeCost;
+          
+          if (p.cash >= starTradeCost) {
+            p.cash -= starTradeCost;
+            
+            // Remove lowest rated player to make room
+            const lowestPlayer = team.roster.reduce((lowest, player) => 
+              player.overall < lowest.overall ? player : lowest
+            );
+            team.roster = team.roster.filter(player => player !== lowestPlayer);
+            
+            // Add star player
+            team.roster.push(targetStar);
+            team.roster.sort((a, b) => b.overall - a.overall);
+            
+            // Update team metrics
+            team.operations.fanSatisfaction = Math.min(100, team.operations.fanSatisfaction + 25);
+            team.operations.mediaRating = Math.min(100, team.operations.mediaRating + 20);
+            team.performance.championshipOdds = Math.min(90, team.performance.championshipOdds + 25);
+            team.currentValue += starTradeCost * 0.6; // Team value increases
+            
+            updateTeamRevenue(team);
+            pushToast(`⭐ Acquired ${targetStar.name} (${targetStar.overall} OVR)! Championship odds soar!`, 'success');
+          } else {
+            pushToast(`Need ${formatMoney(starTradeCost)} to acquire this star player`, 'error');
+          }
+          break;
+
+        case 'develop_young_talent':
+          const developmentCost = 75; // $75M development program
+          if (p.cash >= developmentCost) {
+            p.cash -= developmentCost;
+            
+            // Improve young players (under 25)
+            const youngPlayers = team.roster.filter(player => player.age < 25);
+            youngPlayers.forEach(player => {
+              player.overall = Math.min(95, player.overall + irnd(2, 6));
+              player.morale = Math.min(100, player.morale + 10);
+            });
+            
+            team.operations.teamChemistry = Math.min(100, team.operations.teamChemistry + 15);
+            pushToast(`🎓 Youth development program complete! ${youngPlayers.length} players improved!`, 'success');
+          } else {
+            pushToast(`Need ${formatMoney(developmentCost)} for development program`, 'error');
+          }
+          break;
+
+        case 'sign_free_agent':
+          const freeAgents = generateAvailableStars().filter(star => star.team === 'Available').slice(0, 3);
+          const selectedAgent = pick(freeAgents);
+          const signingCost = selectedAgent.salary * 3; // 3 years upfront
+          
+          if (p.cash >= signingCost && team.roster.length < 18) {
+            p.cash -= signingCost;
+            selectedAgent.team = team.team;
+            team.roster.push(selectedAgent);
+            team.roster.sort((a, b) => b.overall - a.overall);
+            
+            team.operations.fanSatisfaction = Math.min(100, team.operations.fanSatisfaction + 15);
+            team.currentValue += signingCost * 0.4;
+            
+            updateTeamRevenue(team);
+            pushToast(`✍️ Signed ${selectedAgent.name} to a 3-year deal!`, 'success');
+          } else {
+            pushToast(team.roster.length >= 18 ? "Roster is full" : `Need ${formatMoney(signingCost)} to sign this player`, 'error');
+          }
+          break;
+
+        case 'manage_social_media':
+          const socialAction = value?.action || 'boost_followers';
+          const investment = value?.investment || 50;
+          
+          if (p.cash >= investment) {
+            p.cash -= investment;
+            const result = manageSocialMedia(team, socialAction, investment);
+            
+            // Social media success impacts revenue
+            const revenueBoost = Math.round(investment * 0.5);
+            team.finances.revenue += revenueBoost;
+            team.finances.merchandising += Math.round(revenueBoost * 0.3);
+            
+            updateTeamRevenue(team);
+            pushToast(`📱 ${result}`, 'success');
+          } else {
+            pushToast(`Need ${formatMoney(investment)} for social media campaign`, 'error');
+          }
+          break;
+
+        case 'upgrade_training_facility':
+          const trainingCost = 200; // $200M state-of-the-art facility
+          if (p.cash >= trainingCost) {
+            p.cash -= trainingCost;
+            
+            // Improve all players slightly
+            team.roster.forEach(player => {
+              player.overall = Math.min(95, player.overall + irnd(1, 3));
+              player.morale = Math.min(100, player.morale + 5);
+            });
+            
+            team.operations.facilityQuality = Math.min(100, team.operations.facilityQuality + 20);
+            team.operations.teamChemistry = Math.min(100, team.operations.teamChemistry + 10);
+            team.currentValue += trainingCost * 0.8;
+            
+            pushToast(`🏋️ Elite training facility built! All players improved!`, 'success');
+          } else {
+            pushToast(`Need ${formatMoney(trainingCost)} for training facility upgrade`, 'error');
+          }
+          break;
+
+        case 'host_charity_event':
+          const charityCost = 30; // $30M charity event
+          if (p.cash >= charityCost) {
+            p.cash -= charityCost;
+            
+            team.operations.fanSatisfaction = Math.min(100, team.operations.fanSatisfaction + 20);
+            team.operations.mediaRating = Math.min(100, team.operations.mediaRating + 15);
+            team.finances.sponsorships += 15; // Attracts sponsors
+            
+            updateTeamRevenue(team);
+            pushToast(`❤️ Charity event was a huge success! Community loves you!`, 'success');
+          } else {
+            pushToast(`Need ${formatMoney(charityCost)} for charity event`, 'error');
+          }
+          break;
+
+        case 'negotiate_broadcast_deal':
+          const broadcastCost = 100; // $100M for premium broadcast package
+          if (p.cash >= broadcastCost) {
+            p.cash -= broadcastCost;
+            
+            team.finances.tvDeals = Math.min(200, team.finances.tvDeals + 50);
+            team.operations.mediaRating = Math.min(100, team.operations.mediaRating + 25);
+            
+            updateTeamRevenue(team);
+            pushToast(`📺 New broadcast deal signed! Massive TV revenue increase!`, 'success');
+          } else {
+            pushToast(`Need ${formatMoney(broadcastCost)} for broadcast deal`, 'error');
+          }
+          break;
       }
       
       return p;
@@ -3517,11 +3750,12 @@ export default function BasketballLife(){
     const ticketRevenue = (team.finances.ticketPrices * team.finances.attendance * 41) / 1000000; // 41 home games
     const merchandisingRevenue = team.finances.merchandising;
     const sponsorshipRevenue = team.finances.sponsorships;
+    const endorsementRevenue = team.finances.endorsements || 0;
     const tvRevenue = team.finances.tvDeals;
     const socialMediaRevenue = (team.operations.socialMediaFollowers / 1000000) * 5; // $5M per million followers
     
     team.finances.revenue = Math.round(baseRevenue + ticketRevenue + merchandisingRevenue + 
-                                     sponsorshipRevenue + tvRevenue + socialMediaRevenue);
+                                     sponsorshipRevenue + endorsementRevenue + tvRevenue + socialMediaRevenue);
     team.finances.profit = team.finances.revenue - team.finances.expenses;
   }
   
@@ -3585,6 +3819,205 @@ export default function BasketballLife(){
     return generateEnhancedTeamRoster(teamName).slice(0, 12);
   }
   
+  // Enhanced Trading System
+  function generateAvailableStars() {
+    const STAR_NAMES = [
+      'LeBron James', 'Stephen Curry', 'Kevin Durant', 'Giannis Antetokounmpo', 'Luka Doncic',
+      'Jayson Tatum', 'Joel Embiid', 'Nikola Jokic', 'Damian Lillard', 'Russell Westbrook',
+      'James Harden', 'Anthony Davis', 'Kawhi Leonard', 'Paul George', 'Jimmy Butler',
+      'Kyrie Irving', 'Klay Thompson', 'Zion Williamson', 'Ja Morant', 'Trae Young',
+      'Devin Booker', 'Donovan Mitchell', 'Bradley Beal', 'CJ McCollum', 'Kyle Lowry',
+      'Khris Middleton', 'Jrue Holiday', 'Rudy Gobert', 'Karl-Anthony Towns', 'Ben Simmons'
+    ];
+    
+    return STAR_NAMES.map(name => {
+      const overall = irnd(82, 96);
+      const age = irnd(23, 34);
+      const position = pick(['PG', 'SG', 'SF', 'PF', 'C']);
+      
+      return {
+        name,
+        position,
+        overall,
+        age,
+        yearsInLeague: Math.max(1, age - 19),
+        salary: overall >= 90 ? irnd(35, 50) : overall >= 85 ? irnd(25, 35) : irnd(15, 25),
+        team: pick(['Available', 'Lakers', 'Warriors', 'Nets', 'Heat', 'Celtics', 'Suns', 'Nuggets']),
+        tradeCost: overall >= 90 ? irnd(150, 300) : overall >= 85 ? irnd(80, 150) : irnd(40, 80),
+        stats: {
+          ppg: overall >= 90 ? irnd(25, 35) : overall >= 85 ? irnd(20, 28) : irnd(15, 22),
+          rpg: position === 'C' ? irnd(10, 15) : position === 'PF' ? irnd(8, 12) : irnd(4, 8),
+          apg: position === 'PG' ? irnd(8, 12) : position === 'SG' ? irnd(4, 8) : irnd(3, 6),
+          fgPct: irnd(45, 55),
+          tpPct: irnd(35, 45)
+        },
+        contract: {
+          years: irnd(2, 4),
+          remaining: irnd(1, 3)
+        },
+        specialties: pick([
+          ['Elite Scorer', 'Clutch'], ['Defensive Anchor', 'Rim Protector'], 
+          ['Playmaker', 'Court Vision'], ['Three-Point Specialist', 'Off-Ball Movement'],
+          ['Versatile Defender', 'Leadership'], ['Fast Break', 'Athleticism']
+        ])
+      };
+    }).sort((a, b) => b.overall - a.overall);
+  }
+
+  function evaluateTradeOffer(yourPlayers, targetPlayer, cashOffered) {
+    const yourValue = yourPlayers.reduce((sum, player) => {
+      return sum + (player.overall * 1.5) + (player.age < 28 ? 10 : player.age > 32 ? -10 : 0);
+    }, 0);
+    
+    const targetValue = (targetPlayer.overall * 1.5) + 
+                       (targetPlayer.age < 28 ? 10 : targetPlayer.age > 32 ? -10 : 0);
+    
+    const cashValue = cashOffered / 10; // $10M cash = 1 value point
+    const totalOfferValue = yourValue + cashValue;
+    
+    const ratio = totalOfferValue / targetValue;
+    
+    if (ratio >= 1.3) return { rating: 'Excellent', chance: 85, description: 'They would love this trade' };
+    if (ratio >= 1.1) return { rating: 'Great', chance: 70, description: 'Very appealing offer' };
+    if (ratio >= 0.9) return { rating: 'Fair', chance: 50, description: 'Balanced trade' };
+    if (ratio >= 0.7) return { rating: 'Poor', chance: 25, description: 'Unlikely to accept' };
+    return { rating: 'Terrible', chance: 5, description: 'Insulting offer' };
+  }
+
+  function simulateTradeNegotiation(team, tradeOffer) {
+    const evaluation = evaluateTradeOffer(tradeOffer.offeredPlayers, tradeOffer.targetPlayer, tradeOffer.cashOffered);
+    const success = Math.random() * 100 < evaluation.chance;
+    
+    return {
+      success,
+      evaluation,
+      counterOffer: !success && Math.random() < 0.3 ? generateCounterOffer(tradeOffer) : null
+    };
+  }
+
+  function generateCounterOffer(originalOffer) {
+    return {
+      message: pick([
+        "We need more value in return",
+        "Add another player or more cash",
+        "We're looking for younger talent",
+        "Include draft picks in the deal"
+      ]),
+      demands: pick([
+        "Add $25-50M cash",
+        "Include a promising young player",
+        "Add future draft considerations",
+        "We want your best bench player too"
+      ])
+    };
+  }
+
+  // Advanced Team Analytics
+  function calculateTeamAnalytics(team) {
+    const roster = team.roster || [];
+    const averageAge = roster.reduce((sum, p) => sum + p.age, 0) / roster.length;
+    const averageOverall = roster.reduce((sum, p) => sum + p.overall, 0) / roster.length;
+    const totalSalary = roster.reduce((sum, p) => sum + p.salary, 0);
+    
+    const starters = roster.slice(0, 5);
+    const startersOverall = starters.reduce((sum, p) => sum + p.overall, 0) / 5;
+    
+    const analytics = {
+      teamStrength: Math.round(averageOverall),
+      starterStrength: Math.round(startersOverall),
+      benchDepth: Math.round(roster.slice(5).reduce((sum, p) => sum + p.overall, 0) / 10),
+      averageAge: Math.round(averageAge * 10) / 10,
+      totalPayroll: totalSalary,
+      luxuryTaxStatus: totalSalary > 140 ? 'Over Cap' : 'Under Cap',
+      luxuryTaxPenalty: Math.max(0, (totalSalary - 140) * 3), // $3M penalty per $1M over
+      
+      // Position strength
+      positionStrength: {
+        PG: Math.round(roster.filter(p => p.position === 'PG').reduce((sum, p) => sum + p.overall, 0) / 
+             roster.filter(p => p.position === 'PG').length),
+        SG: Math.round(roster.filter(p => p.position === 'SG').reduce((sum, p) => sum + p.overall, 0) / 
+             roster.filter(p => p.position === 'SG').length),
+        SF: Math.round(roster.filter(p => p.position === 'SF').reduce((sum, p) => sum + p.overall, 0) / 
+             roster.filter(p => p.position === 'SF').length),
+        PF: Math.round(roster.filter(p => p.position === 'PF').reduce((sum, p) => sum + p.overall, 0) / 
+             roster.filter(p => p.position === 'PF').length),
+        C: Math.round(roster.filter(p => p.position === 'C').reduce((sum, p) => sum + p.overall, 0) / 
+            roster.filter(p => p.position === 'C').length)
+      },
+      
+      // Team chemistry and morale
+      teamChemistry: Math.round(roster.reduce((sum, p) => sum + (p.chemistry || p.morale || 75), 0) / roster.length),
+      averageMorale: Math.round(roster.reduce((sum, p) => sum + (p.morale || 75), 0) / roster.length),
+      
+      // Win prediction
+      projectedWins: Math.round(((averageOverall - 60) * 1.8) + 25 + (Math.random() * 10 - 5)),
+      playoffChance: Math.max(5, Math.min(95, ((averageOverall - 65) * 6) + 30)),
+      championshipOdds: Math.max(1, Math.min(40, ((averageOverall - 75) * 4) + 5))
+    };
+    
+    return analytics;
+  }
+
+  // Social Media Management System
+  function manageSocialMedia(team, action, investment = 0) {
+    const socialMedia = team.socialMedia || {
+      followers: 500000,
+      engagement: 65,
+      campaigns: [],
+      influencerDeals: [],
+      viralMoments: 0
+    };
+    
+    switch (action) {
+      case 'boost_followers':
+        if (investment >= 10) {
+          const followerIncrease = Math.round(investment * 25000 + Math.random() * 100000);
+          socialMedia.followers += followerIncrease;
+          socialMedia.engagement = Math.min(100, socialMedia.engagement + 5);
+          return `+${followerIncrease.toLocaleString()} followers! Engagement up 5%`;
+        }
+        break;
+        
+      case 'influencer_collab':
+        if (investment >= 25) {
+          const deal = {
+            influencer: pick(['Popular Sports Blogger', 'NBA YouTuber', 'TikTok Creator', 'Instagram Model']),
+            cost: investment,
+            followers: Math.round(investment * 15000),
+            duration: '6 months'
+          };
+          socialMedia.influencerDeals.push(deal);
+          socialMedia.followers += deal.followers;
+          return `Partnered with ${deal.influencer}! +${deal.followers.toLocaleString()} followers`;
+        }
+        break;
+        
+      case 'viral_content':
+        if (investment >= 15) {
+          const contentTypes = ['Behind-the-scenes', 'Player challenge', 'Charity event', 'Fan interaction', 'Mascot content'];
+          const content = pick(contentTypes);
+          const viralBonus = Math.round(investment * 50000 + Math.random() * 200000);
+          socialMedia.followers += viralBonus;
+          socialMedia.viralMoments++;
+          socialMedia.engagement = Math.min(100, socialMedia.engagement + 10);
+          return `${content} went viral! +${viralBonus.toLocaleString()} followers, engagement +10%`;
+        }
+        break;
+        
+      case 'live_streams':
+        if (investment >= 8) {
+          const streamBonus = Math.round(investment * 12000);
+          socialMedia.followers += streamBonus;
+          socialMedia.engagement = Math.min(100, socialMedia.engagement + 3);
+          return `Live streaming events! +${streamBonus.toLocaleString()} followers`;
+        }
+        break;
+    }
+    
+    team.socialMedia = socialMedia;
+    return 'Social media action completed';
+  }
+
   function generateStarPlayer() {
     return {
       name: `${pick(['LeBron', 'Stephen', 'Kevin', 'Giannis', 'Luka', 'Jayson', 'Devin', 'Ja', 'Zion', 'Trae'])} ${pick(['Jackson', 'Thompson', 'Anderson', 'Taylor', 'Thomas', 'Jackson', 'White', 'Harris', 'Martin', 'Thompson'])}`,
@@ -7236,7 +7669,7 @@ function TeamOwnershipPanel({ game, onManageTeam }) {
                 {/* Management Actions */}
                 <div>
                   <h4>⚙️ Management Actions</h4>
-                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem'}}>
+                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '2rem'}}>
                     <div className="action-card">
                       <h5>🎫 Ticket Pricing</h5>
                       <p>Current: ${team.finances.ticketPrices}</p>
@@ -7260,7 +7693,7 @@ function TeamOwnershipPanel({ game, onManageTeam }) {
                     <div className="action-card">
                       <h5>🏟️ Facility Upgrades</h5>
                       <p>Quality: {team.operations.facilityQuality}%</p>
-                      <p>Cost: {formatMoney(500)}</p>
+                      <p>Cost: {formatMoney(800)}</p>
                       <button 
                         className="btn btn-primary btn-sm"
                         onClick={() => onManageTeam(index, 'upgrade_facilities')}
@@ -7273,7 +7706,7 @@ function TeamOwnershipPanel({ game, onManageTeam }) {
                     <div className="action-card">
                       <h5>👨‍🏫 Coaching Staff</h5>
                       <p>Quality: {team.operations.coachingStaff}%</p>
-                      <p>Cost: {formatMoney(100)}</p>
+                      <p>Cost: {formatMoney(150)}</p>
                       <button 
                         className="btn btn-primary btn-sm"
                         onClick={() => onManageTeam(index, 'hire_coaching_staff')}
@@ -7286,7 +7719,7 @@ function TeamOwnershipPanel({ game, onManageTeam }) {
                     <div className="action-card">
                       <h5>📺 Marketing</h5>
                       <p>Media Rating: {team.operations.mediaRating}%</p>
-                      <p>Cost: {formatMoney(80)}</p>
+                      <p>Cost: {formatMoney(120)}</p>
                       <button 
                         className="btn btn-warning btn-sm"
                         onClick={() => onManageTeam(index, 'marketing_campaign')}
@@ -7298,34 +7731,292 @@ function TeamOwnershipPanel({ game, onManageTeam }) {
                     
                     <div className="action-card">
                       <h5>⭐ Acquire Superstar</h5>
-                      <p>Team Chemistry: {team.operations.teamChemistry}%</p>
-                      <p>Cost: {formatMoney(200)}</p>
+                      <p>Championship Odds: {team.performance.championshipOdds}%</p>
+                      <p>Cost: {formatMoney(150)}-{formatMoney(300)}</p>
                       <button 
                         className="btn btn-success btn-sm"
                         onClick={() => onManageTeam(index, 'trade_for_star')}
                         style={{width: '100%', marginTop: '1rem'}}
                       >
-                        Make Trade
+                        Trade for Star
                       </button>
                     </div>
                     
                     <div className="action-card">
-                      <h5>🎨 Rebrand Team</h5>
-                      <p>Change colors, logo, jerseys</p>
-                      <p>Cost: Free</p>
+                      <h5>🎓 Develop Youth</h5>
+                      <p>Young players: {team.roster.filter(p => p.age < 25).length}</p>
+                      <p>Cost: {formatMoney(75)}</p>
                       <button 
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => onManageTeam(index, 'change_colors')}
+                        className="btn btn-info btn-sm"
+                        onClick={() => onManageTeam(index, 'develop_young_talent')}
                         style={{width: '100%', marginTop: '1rem'}}
                       >
-                        Rebrand
+                        Development Program
                       </button>
+                    </div>
+                    
+                    <div className="action-card">
+                      <h5>✍️ Sign Free Agent</h5>
+                      <p>Roster spots: {18 - team.roster.length}</p>
+                      <p>Cost: Varies</p>
+                      <button 
+                        className="btn btn-success btn-sm"
+                        onClick={() => onManageTeam(index, 'sign_free_agent')}
+                        style={{width: '100%', marginTop: '1rem'}}
+                        disabled={team.roster.length >= 18}
+                      >
+                        Sign Player
+                      </button>
+                    </div>
+                    
+                    <div className="action-card">
+                      <h5>📱 Social Media</h5>
+                      <p>Followers: {(team.socialMedia?.followers || 500000).toLocaleString()}</p>
+                      <p>Cost: {formatMoney(50)}</p>
+                      <button 
+                        className="btn btn-warning btn-sm"
+                        onClick={() => onManageTeam(index, 'manage_social_media', { action: 'boost_followers', investment: 50 })}
+                        style={{width: '100%', marginTop: '1rem'}}
+                      >
+                        Boost Followers
+                      </button>
+                    </div>
+                    
+                    <div className="action-card">
+                      <h5>🏋️ Training Facility</h5>
+                      <p>Player development boost</p>
+                      <p>Cost: {formatMoney(200)}</p>
+                      <button 
+                        className="btn btn-primary btn-sm"
+                        onClick={() => onManageTeam(index, 'upgrade_training_facility')}
+                        style={{width: '100%', marginTop: '1rem'}}
+                      >
+                        Build Elite Facility
+                      </button>
+                    </div>
+                    
+                    <div className="action-card">
+                      <h5>❤️ Charity Event</h5>
+                      <p>Community relations boost</p>
+                      <p>Cost: {formatMoney(30)}</p>
+                      <button 
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => onManageTeam(index, 'host_charity_event')}
+                        style={{width: '100%', marginTop: '1rem'}}
+                      >
+                        Host Event
+                      </button>
+                    </div>
+                    
+                    <div className="action-card">
+                      <h5>📺 Broadcast Deal</h5>
+                      <p>TV Revenue: ${team.finances.tvDeals}M</p>
+                      <p>Cost: {formatMoney(100)}</p>
+                      <button 
+                        className="btn btn-warning btn-sm"
+                        onClick={() => onManageTeam(index, 'negotiate_broadcast_deal')}
+                        style={{width: '100%', marginTop: '1rem'}}
+                      >
+                        New Deal
+                      </button>
+                    </div>
+                    
+                    <div className="action-card">
+                      <h5>📊 Simulate Season</h5>
+                      <p>Current Record: {team.performance.wins}-{team.performance.losses}</p>
+                      <p>Free</p>
+                      <button 
+                        className="btn btn-info btn-sm"
+                        onClick={() => onManageTeam(index, 'advance_season')}
+                        style={{width: '100%', marginTop: '1rem'}}
+                      >
+                        Advance Season
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* Sell Team Section */}
+                  <div style={{marginTop: '2rem', padding: '1.5rem', background: 'rgba(239,68,68,0.1)', border: '2px solid rgba(239,68,68,0.3)', borderRadius: '12px'}}>
+                    <h5 style={{color: '#ef4444', marginBottom: '1rem'}}>💸 Sell Team</h5>
+                    <p>Current estimated value: <span style={{color: '#10b981', fontWeight: 'bold'}}>{formatMoney(team.currentValue)}</span></p>
+                    <p style={{fontSize: '0.9rem', opacity: 0.8}}>Selling will allow you to purchase another team.</p>
+                    <button 
+                      className="btn btn-danger btn-sm"
+                      onClick={() => onManageTeam(index, 'sell_team')}
+                      style={{marginTop: '1rem'}}
+                    >
+                      Sell Team for {formatMoney(Math.round(team.currentValue * 0.95))}
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Advanced Team Analytics */}
+                <div style={{marginTop: '2rem'}}>
+                  <h4>📊 Team Analytics & Performance</h4>
+                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '2rem', marginBottom: '2rem'}}>
+                    <div className="panel" style={{padding: '1.5rem'}}>
+                      <h5>🏀 Team Strength</h5>
+                      <div className="stat-box">
+                        <div className="stat-label">Overall Rating</div>
+                        <div className="stat-value">{Math.round(team.roster.reduce((sum, p) => sum + p.overall, 0) / team.roster.length)}</div>
+                      </div>
+                      <div className="stat-box">
+                        <div className="stat-label">Starters Average</div>
+                        <div className="stat-value">{Math.round(team.roster.slice(0, 5).reduce((sum, p) => sum + p.overall, 0) / 5)}</div>
+                      </div>
+                      <div className="stat-box">
+                        <div className="stat-label">Bench Depth</div>
+                        <div className="stat-value">{Math.round(team.roster.slice(5, 12).reduce((sum, p) => sum + p.overall, 0) / 7)}</div>
+                      </div>
+                    </div>
+                    
+                    <div className="panel" style={{padding: '1.5rem'}}>
+                      <h5>💰 Financial Status</h5>
+                      <div className="stat-box">
+                        <div className="stat-label">Total Payroll</div>
+                        <div className="stat-value" style={{color: team.roster.reduce((sum, p) => sum + p.salary, 0) > 140 ? '#ef4444' : '#10b981'}}>
+                          {formatMoney(team.roster.reduce((sum, p) => sum + p.salary, 0))}
+                        </div>
+                      </div>
+                      <div className="stat-box">
+                        <div className="stat-label">Luxury Tax</div>
+                        <div className="stat-value" style={{color: '#ef4444'}}>
+                          {team.roster.reduce((sum, p) => sum + p.salary, 0) > 140 ? 
+                            formatMoney((team.roster.reduce((sum, p) => sum + p.salary, 0) - 140) * 3) : '$0M'}
+                        </div>
+                      </div>
+                      <div className="stat-box">
+                        <div className="stat-label">Salary Cap Space</div>
+                        <div className="stat-value">{formatMoney(Math.max(0, 140 - team.roster.reduce((sum, p) => sum + p.salary, 0)))}</div>
+                      </div>
+                    </div>
+                    
+                    <div className="panel" style={{padding: '1.5rem'}}>
+                      <h5>🏆 Season Projection</h5>
+                      <div className="stat-box">
+                        <div className="stat-label">Projected Wins</div>
+                        <div className="stat-value">{25 + Math.round((team.roster.reduce((sum, p) => sum + p.overall, 0) / team.roster.length - 60) * 1.2)}</div>
+                      </div>
+                      <div className="stat-box">
+                        <div className="stat-label">Playoff Chance</div>
+                        <div className="stat-value">{Math.max(5, Math.min(95, Math.round((team.roster.reduce((sum, p) => sum + p.overall, 0) / team.roster.length - 65) * 6 + 30)))}%</div>
+                      </div>
+                      <div className="stat-box">
+                        <div className="stat-label">Championship Odds</div>
+                        <div className="stat-value">{Math.max(1, Math.min(40, Math.round((team.roster.reduce((sum, p) => sum + p.overall, 0) / team.roster.length - 75) * 4 + 5)))}%</div>
+                      </div>
                     </div>
                   </div>
                 </div>
                 
-                {/* Current Roster */}
+                {/* Starting Lineup Management */}
                 <div style={{marginTop: '2rem'}}>
+                  <h4>🏀 Starting Lineup</h4>
+                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1rem', marginBottom: '2rem'}}>
+                    {['PG', 'SG', 'SF', 'PF', 'C'].map((position, posIndex) => {
+                      const positionPlayers = team.roster.filter(p => p.position === position);
+                      const starter = positionPlayers[0] || team.roster[posIndex];
+                      
+                      return (
+                        <div key={position} className="panel" style={{padding: '1rem', textAlign: 'center'}}>
+                          <h6 style={{marginBottom: '0.5rem', color: '#10b981'}}>{position}</h6>
+                          {starter && (
+                            <>
+                              <div style={{fontWeight: 'bold', fontSize: '0.9rem'}}>{starter.name}</div>
+                              <div style={{color: '#3b82f6'}}>{starter.overall} OVR</div>
+                              <div style={{fontSize: '0.8rem', opacity: 0.7}}>Age: {starter.age}</div>
+                              <div style={{fontSize: '0.8rem', color: '#10b981'}}>{formatMoney(starter.salary)}</div>
+                              <div style={{fontSize: '0.8rem', marginTop: '0.5rem'}}>
+                                {starter.stats.ppg?.toFixed(1)} PPG
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                
+                {/* Full Roster Management */}
+                <div style={{marginTop: '2rem'}}>
+                  <h4>📋 Full Roster ({team.roster.length}/18 players)</h4>
+                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem'}}>
+                    {team.roster.map((player, playerIndex) => (
+                      <div key={playerIndex} className="player-card" style={{
+                        padding: '1rem',
+                        background: playerIndex < 5 ? 'rgba(16,185,129,0.1)' : playerIndex < 12 ? 'rgba(59,130,246,0.1)' : 'rgba(107,114,128,0.1)',
+                        border: `2px solid ${playerIndex < 5 ? 'rgba(16,185,129,0.3)' : playerIndex < 12 ? 'rgba(59,130,246,0.3)' : 'rgba(107,114,128,0.3)'}`,
+                        borderRadius: '8px'
+                      }}>
+                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '0.5rem'}}>
+                          <div>
+                            <div className="player-name" style={{fontSize: '1rem', fontWeight: 'bold'}}>{player.name}</div>
+                            <div className="player-position" style={{color: '#6b7280'}}>{player.position}</div>
+                          </div>
+                          <div style={{textAlign: 'right'}}>
+                            <div className="player-overall" style={{fontSize: '1.2rem', fontWeight: 'bold', color: player.overall >= 85 ? '#10b981' : player.overall >= 75 ? '#3b82f6' : '#6b7280'}}>{player.overall}</div>
+                            <div style={{fontSize: '0.8rem', opacity: 0.7}}>OVR</div>
+                          </div>
+                        </div>
+                        
+                        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.8rem'}}>
+                          <div>Age: {player.age}</div>
+                          <div>Years: {player.yearsInLeague || 0}</div>
+                          <div style={{gridColumn: '1 / -1', color: '#10b981', fontWeight: 'bold'}}>{formatMoney(player.salary)}/year</div>
+                        </div>
+                        
+                        {player.stats && (
+                          <div style={{marginTop: '0.5rem', fontSize: '0.8rem', opacity: 0.8}}>
+                            {player.stats.ppg?.toFixed(1)} PPG, {player.stats.rpg?.toFixed(1)} RPB, {player.stats.apg?.toFixed(1)} APG
+                          </div>
+                        )}
+                        
+                        <div style={{marginTop: '0.5rem', fontSize: '0.8rem'}}>
+                          <span style={{color: player.morale >= 80 ? '#10b981' : player.morale >= 60 ? '#f59e0b' : '#ef4444'}}>
+                            Morale: {player.morale}%
+                          </span>
+                        </div>
+                        
+                        <div style={{marginTop: '1rem', display: 'flex', gap: '0.5rem'}}>
+                          <button 
+                            className="btn btn-xs btn-warning"
+                            onClick={() => console.log('Trade player:', player.name)}
+                            style={{flex: 1}}
+                          >
+                            Trade
+                          </button>
+                          <button 
+                            className="btn btn-xs btn-danger"
+                            onClick={() => console.log('Release player:', player.name)}
+                            style={{flex: 1}}
+                          >
+                            Release
+                          </button>
+                        </div>
+                        
+                        <div style={{marginTop: '0.5rem', fontSize: '0.7rem', opacity: 0.6}}>
+                          {playerIndex < 5 ? '🟢 Starter' : playerIndex < 12 ? '🔵 Rotation' : '⚪ Bench'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {team.roster.length < 18 && (
+                    <div style={{textAlign: 'center', marginTop: '2rem', padding: '2rem', background: 'rgba(59,130,246,0.1)', borderRadius: '12px'}}>
+                      <h5>🆕 Add More Players</h5>
+                      <p>You have {18 - team.roster.length} roster spots available</p>
+                      <button 
+                        className="btn btn-primary"
+                        onClick={() => onManageTeam(index, 'sign_free_agent')}
+                      >
+                        Sign Free Agent
+                      </button>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Current Roster */}
+                <div style={{marginTop: '2rem', display: 'none'}}>
                   <h4>🏀 Current Roster</h4>
                   <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem'}}>
                     {team.roster.slice(0, 8).map((player, playerIndex) => (
