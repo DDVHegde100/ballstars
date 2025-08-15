@@ -388,20 +388,55 @@ const calculatePlayerScore = (game) => {
   // Peak performance (10% of score)
   score += ((peakPER || 15) - 20) * 3; // Peak seasons bonus
   
-  // Accolades and achievements (20% of score)
+  // Accolades and achievements (with much more stringent scoring)
   const championships = totals.titles || 0;
   const finalsMVPs = totals.finalsMVPs || 0;
   const allStars = totals.allstars || 0;
   const mvps = totals.mvps || 0;
   const dpoys = totals.dpoys || 0;
   const scoring = totals.scoring || 0;
+  const allNBAFirst = totals.allNBAFirst || 0;
+  const allNBASecond = totals.allNBASecond || 0;
+  const allNBAThird = totals.allNBAThird || 0;
+
+  // Much more conservative scoring system
+  score += championships * 80; // Championships are extremely valuable
+  score += finalsMVPs * 55; // Finals MVP very valuable
+  score += mvps * 65; // Regular MVP very valuable
+  score += dpoys * 25; // DPOY good but not elite
+  score += scoring * 15; // Scoring titles nice but not legacy-defining
+  score += allStars * 4; // All-Star appearances - baseline achievement
+  score += allNBAFirst * 12; // All-NBA selections matter but not massive
+  score += allNBASecond * 8;
+  score += allNBAThird * 5;
+
+  // Harsh penalties for incomplete resumes
+  if (championships === 0) {
+    score *= 0.65; // Major penalty for no rings
+  }
+  if (mvps === 0 && championships === 0) {
+    score *= 0.45; // Extreme penalty for no MVPs or rings
+  }
+  if (allStars < 5) {
+    score *= 0.8; // Penalty for not being consistently elite
+  }
   
-  score += championships * 60; // Championships are extremely valuable
-  score += finalsMVPs * 40;
-  score += mvps * 50;
-  score += allStars * 6;
-  score += dpoys * 20;
-  score += scoring * 12; // Scoring titles
+  // Longevity requirements - need sustained excellence
+  const yearsPlayed = seasons.length;
+  if (yearsPlayed < 8) {
+    score *= 0.7; // Penalty for short careers
+  }
+  if (yearsPlayed < 5) {
+    score *= 0.4; // Major penalty for very short careers
+  }
+
+  // Peak performance requirements
+  if ((peakPER || 15) < 25) {
+    score *= 0.85; // Penalty for not having elite peak
+  }
+  if ((avgPER || 15) < 20) {
+    score *= 0.75; // Penalty for career-long mediocrity
+  }
   
   // Longevity and consistency bonuses
   score += seasons.length * 3; // Years played
@@ -513,20 +548,33 @@ const generateCurrentLeagueRankings = (game) => {
 };
 
 const generateAllTimeRankings = (game) => {
-  // All-time greats for comparison with more balanced scoring
+  // All-time greats for comparison with more balanced scoring - expanded list
   const allTimeGreats = [
-    { name: "Michael Jordan", score: 950, championships: 6, mvps: 5, avgPPG: 30.1, avgPER: 27.9 },
-    { name: "LeBron James", score: 920, championships: 4, mvps: 4, avgPPG: 27.2, avgPER: 27.5 },
-    { name: "Kareem Abdul-Jabbar", score: 890, championships: 6, mvps: 6, avgPPG: 24.6, avgPER: 25.2 },
-    { name: "Magic Johnson", score: 860, championships: 5, mvps: 3, avgPPG: 19.5, avgPER: 24.1 },
-    { name: "Larry Bird", score: 840, championships: 3, mvps: 3, avgPPG: 24.3, avgPER: 23.5 },
-    { name: "Tim Duncan", score: 820, championships: 5, mvps: 2, avgPPG: 19.0, avgPER: 21.3 },
-    { name: "Shaquille O'Neal", score: 800, championships: 4, mvps: 1, avgPPG: 23.7, avgPER: 26.4 },
-    { name: "Kobe Bryant", score: 780, championships: 5, mvps: 1, avgPPG: 25.0, avgPER: 22.9 },
-    { name: "Hakeem Olajuwon", score: 760, championships: 2, mvps: 1, avgPPG: 21.8, avgPER: 23.6 },
-    { name: "Bill Russell", score: 740, championships: 11, mvps: 5, avgPPG: 15.1, avgPER: 18.9 },
-    { name: "Wilt Chamberlain", score: 720, championships: 2, mvps: 4, avgPPG: 30.1, avgPER: 26.1 },
-    { name: "Stephen Curry", score: 700, championships: 4, mvps: 2, avgPPG: 24.6, avgPER: 23.8 }
+    { name: "Michael Jordan", score: 1000, championships: 6, mvps: 5, avgPPG: 30.1, avgPER: 27.9 },
+    { name: "LeBron James", score: 970, championships: 4, mvps: 4, avgPPG: 27.2, avgPER: 27.5 },
+    { name: "Kareem Abdul-Jabbar", score: 950, championships: 6, mvps: 6, avgPPG: 24.6, avgPER: 25.2 },
+    { name: "Magic Johnson", score: 920, championships: 5, mvps: 3, avgPPG: 19.5, avgPER: 24.1 },
+    { name: "Larry Bird", score: 900, championships: 3, mvps: 3, avgPPG: 24.3, avgPER: 23.5 },
+    { name: "Tim Duncan", score: 880, championships: 5, mvps: 2, avgPPG: 19.0, avgPER: 21.3 },
+    { name: "Bill Russell", score: 860, championships: 11, mvps: 5, avgPPG: 15.1, avgPER: 18.9 },
+    { name: "Shaquille O'Neal", score: 840, championships: 4, mvps: 1, avgPPG: 23.7, avgPER: 26.4 },
+    { name: "Kobe Bryant", score: 820, championships: 5, mvps: 1, avgPPG: 25.0, avgPER: 22.9 },
+    { name: "Wilt Chamberlain", score: 800, championships: 2, mvps: 4, avgPPG: 30.1, avgPER: 26.1 },
+    { name: "Hakeem Olajuwon", score: 780, championships: 2, mvps: 1, avgPPG: 21.8, avgPER: 23.6 },
+    { name: "Stephen Curry", score: 760, championships: 4, mvps: 2, avgPPG: 24.6, avgPER: 23.8 },
+    { name: "Kevin Durant", score: 740, championships: 2, mvps: 1, avgPPG: 27.3, avgPER: 25.1 },
+    { name: "Moses Malone", score: 720, championships: 1, mvps: 3, avgPPG: 20.3, avgPER: 23.8 },
+    { name: "Oscar Robertson", score: 700, championships: 1, mvps: 1, avgPPG: 25.7, avgPER: 23.4 },
+    { name: "Jerry West", score: 680, championships: 1, mvps: 0, avgPPG: 27.0, avgPER: 22.9 },
+    { name: "Karl Malone", score: 660, championships: 0, mvps: 2, avgPPG: 25.0, avgPER: 23.9 },
+    { name: "Dirk Nowitzki", score: 640, championships: 1, mvps: 1, avgPPG: 20.7, avgPER: 21.8 },
+    { name: "Julius Erving", score: 620, championships: 1, mvps: 1, avgPPG: 22.0, avgPER: 22.1 },
+    { name: "Charles Barkley", score: 600, championships: 0, mvps: 1, avgPPG: 22.1, avgPER: 24.6 },
+    { name: "John Stockton", score: 580, championships: 0, mvps: 0, avgPPG: 13.1, avgPER: 21.8 },
+    { name: "David Robinson", score: 560, championships: 2, mvps: 1, avgPPG: 21.1, avgPER: 23.1 },
+    { name: "Kevin Garnett", score: 540, championships: 1, mvps: 1, avgPPG: 17.8, avgPER: 22.7 },
+    { name: "Scottie Pippen", score: 520, championships: 6, mvps: 0, avgPPG: 16.1, avgPER: 18.6 },
+    { name: "Giannis Antetokounmpo", score: 500, championships: 1, mvps: 2, avgPPG: 23.2, avgPER: 26.8 }
   ];
   
   // Add player if they have completed seasons
@@ -1650,9 +1698,9 @@ export default function BasketballLife(){
           p.career.timeline.push(event("Training", "Auto-rest applied before training."));
         }
         
-        // Balanced peak cost for training
-        const costPeak = type==="Recovery"? (8 * intensity) : -(8 * intensity);
-        const moraleBase = type==="Recovery"? 2 : (chance(0.8) ? 1 : -1); // Training more likely to help morale
+        // Reduced peak cost for training - less fatigue
+        const costPeak = type==="Recovery"? (12 * intensity) : -(5 * intensity); // Reduced from 8 to 5
+        const moraleBase = type==="Recovery"? 2 : (chance(0.85) ? 1 : -1); // Training more likely to help morale
         const moraleDelta = moraleBase * intensity;
         p.peak = clamp(p.peak + costPeak, 0, 100);
         p.morale = clamp(p.morale + moraleDelta, 0, 100);
@@ -1671,36 +1719,36 @@ export default function BasketballLife(){
           Recovery: [],
         };
         
-        // More balanced training gains that reward progress but aren't too easy
-        let baseBoost = 0.18 + rnd(0, 0.28); // 0.18-0.46 base (slightly easier)
+        // Easier training gains for more enjoyable progression
+        let baseBoost = 0.25 + rnd(0, 0.35); // Increased from 0.18-0.46 to 0.25-0.60
         
-        // Age penalty for training - more gradual
-        if (p.age >= 25) baseBoost *= 0.96;
-        if (p.age >= 28) baseBoost *= 0.92;
-        if (p.age >= 30) baseBoost *= 0.87;
-        if (p.age >= 33) baseBoost *= 0.82;
+        // More lenient age penalty for training
+        if (p.age >= 25) baseBoost *= 0.98; // Reduced penalty
+        if (p.age >= 28) baseBoost *= 0.95; // Reduced penalty
+        if (p.age >= 30) baseBoost *= 0.90; // Reduced penalty
+        if (p.age >= 33) baseBoost *= 0.85; // Reduced penalty
         
-        // Slightly easier skill level scaling - high-rated players can still improve
+        // Much more forgiving diminishing returns curve - easier to improve
         trainMap[type].forEach(skill => {
           let skillBoost = baseBoost * intensity;
           const currentRating = p.ratings[skill];
           
-          // More forgiving diminishing returns curve
-          if (currentRating >= 95) skillBoost *= 0.45; // Still very hard but slightly easier
-          else if (currentRating >= 90) skillBoost *= 0.55; // Hard but more manageable
-          else if (currentRating >= 85) skillBoost *= 0.70; // Moderate difficulty
-          else if (currentRating >= 80) skillBoost *= 0.80; // Easier
-          else if (currentRating >= 75) skillBoost *= 0.90; // Much easier
-          else if (currentRating >= 70) skillBoost *= 0.95; // Even easier
-          // Below 70 gets full boost - easy to improve weak skills
+          // Significantly easier skill progression at all levels
+          if (currentRating >= 95) skillBoost *= 0.60; // Much easier than before
+          else if (currentRating >= 90) skillBoost *= 0.75; // Easier high-level training
+          else if (currentRating >= 85) skillBoost *= 0.85; // More reasonable
+          else if (currentRating >= 80) skillBoost *= 0.90; // Easier
+          else if (currentRating >= 75) skillBoost *= 0.95; // Much easier
+          else if (currentRating >= 70) skillBoost *= 1.0; // Full boost
+          // Below 70 gets 105% boost - easy to improve weak skills
+          else skillBoost *= 1.05;
           
-          // Training effectiveness based on peak condition
-          skillBoost *= (p.peak / 100);
+          // Training effectiveness based on peak condition (more forgiving)
+          skillBoost *= Math.max(0.6, p.peak / 100); // Minimum 60% effectiveness
           
-          // Better success/failure odds with more frequent good sessions
-          if (chance(0.25)) skillBoost *= 1.8; // Great session (increased chance)
-          else if (chance(0.08)) skillBoost *= 0.6; // Poor session (decreased chance)
-          else if (chance(0.1)) skillBoost *= 0.6; // Poor session (decreased chance)
+          // Much better success/failure odds with more frequent great sessions
+          if (chance(0.35)) skillBoost *= 2.0; // Great session (much higher chance)
+          else if (chance(0.05)) skillBoost *= 0.7; // Poor session (lower chance)
           
           p.ratings[skill] = clamp(Math.round(p.ratings[skill] + skillBoost), 40, 99);
         });
@@ -3102,68 +3150,95 @@ export default function BasketballLife(){
 
 // Simple profile picture component
 // ---------- Subcomponents ----------
+
+// Modern Initials Avatar Component
+function InitialsAvatar({ firstName, lastName, size = 64, className = "" }) {
+  const initials = `${firstName?.charAt(0) || 'P'}${lastName?.charAt(0) || 'L'}`;
+  
+  return (
+    <div 
+      className={`initials-avatar ${className}`}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        background: `linear-gradient(135deg, var(--team-primary), var(--team-secondary))`,
+        color: 'white',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: `${size * 0.4}px`,
+        fontWeight: '700',
+        fontFamily: 'Inter, sans-serif',
+        textShadow: '0 1px 3px rgba(0, 0, 0, 0.5)',
+        border: '3px solid rgba(255, 255, 255, 0.2)',
+        boxShadow: `
+          0 8px 32px rgba(0, 0, 0, 0.3),
+          inset 0 1px 0 rgba(255, 255, 255, 0.3),
+          0 0 0 1px rgba(255, 255, 255, 0.1)
+        `,
+        transition: 'all 0.3s ease',
+        cursor: 'pointer',
+        position: 'relative',
+        overflow: 'hidden'
+      }}
+    >
+      <div style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: `radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.2), transparent 50%)`,
+        borderRadius: '50%'
+      }} />
+      <span style={{ position: 'relative', zIndex: 1 }}>{initials}</span>
+    </div>
+  );
+}
+
 function Header({ game, onReset, onExport, onImport, onRetire, onAppearanceChange }){
-  const [showProfileChanger, setShowProfileChanger] = useState(false);
   const teamInfo = NBA_TEAMS[game.team];
   const teamName = teamInfo ? teamInfo.name : game.team;
-  
-  const handleAppearanceChange = (newAppearance) => {
-    onAppearanceChange(newAppearance);
-  };
   
   return (
     <>
       <div className="header">
         <div className="header-content">
           <div className="player-info">
-            <div 
-              className="player-avatar" 
-              onClick={() => setShowProfileChanger(true)}
-              style={{ 
-                cursor: 'pointer',
-                position: 'relative',
-                padding: 0,
-                borderRadius: '50%',
-                overflow: 'visible'
-              }}
-              title="Click to customize avatar"
-            >
-              <Avatar 
-                appearance={game.appearance || generateAppearance()} 
-                size={64} 
+            <div className="player-avatar-section">
+              <InitialsAvatar 
+                firstName={game.firstName} 
+                lastName={game.lastName}
+                size={88} 
               />
-              <div style={{
-                position: 'absolute',
-                bottom: -2,
-                right: -2,
-                width: '20px',
-                height: '20px',
-                borderRadius: '50%',
-                background: 'var(--team-primary)',
-                color: 'white',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '10px',
-                fontWeight: 'bold',
-                border: '2px solid rgba(255, 255, 255, 0.9)',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)'
-              }}>
-                ✏️
-              </div>
             </div>
             <div className="player-details">
-              <h1>{game.firstName} {game.lastName}</h1>
+              <div className="player-name-section">
+                <h1>{game.firstName} {game.lastName}</h1>
+                <div className="player-position">{game.archetype}</div>
+              </div>
               <div className="player-meta">
-                <span>{teamName}</span>
-                <span>#{game.jersey}</span>
-                <span>{game.archetype}</span>
-                <span>{game.ratings.overall} OVR</span>
-                <span>{formatMoney(game.cash)}</span>
+                <div className="player-meta-item team-badge">
+                  <span className="player-meta-label">Team:</span>
+                  <span className="player-meta-value">{teamName}</span>
+                </div>
+                <div className="player-meta-item">
+                  <span className="player-meta-label">#</span>
+                  <span className="player-meta-value">{game.jersey}</span>
+                </div>
+                <div className="player-meta-item stat-badge">
+                  <span className="player-meta-label">OVR:</span>
+                  <span className="player-meta-value">{game.ratings.overall}</span>
+                </div>
+                <div className="player-meta-item stat-badge">
+                  <span className="player-meta-label">Cash:</span>
+                  <span className="player-meta-value">{formatMoney(game.cash)}</span>
+                </div>
                 {game.relationships?.girlfriend && (
-                  <span style={{ color: 'var(--team-secondary)' }}>
-                    💕 {game.relationships.girlfriend.name}
-                  </span>
+                  <div className="player-meta-item">
+                    <span className="player-meta-value">💕 {game.relationships.girlfriend.name}</span>
+                  </div>
                 )}
               </div>
             </div>
@@ -3172,18 +3247,10 @@ function Header({ game, onReset, onExport, onImport, onRetire, onAppearanceChang
             <button className="btn btn-secondary btn-sm" onClick={onExport}>Export</button>
             <button className="btn btn-secondary btn-sm" onClick={onImport}>Import</button>
             <button className="btn btn-ghost btn-sm" onClick={onReset}>New Career</button>
-            {!game.retired && <button className="btn btn-sm" style={{background: '#dc2626', color: 'white'}} onClick={onRetire}>Retire</button>}
+            {!game.retired && <button className="btn btn-danger btn-sm" onClick={onRetire}>Retire</button>}
           </div>
         </div>
       </div>
-      
-      {showProfileChanger && (
-        <ProfilePictureChanger
-          currentAppearance={game.appearance || generateAppearance()}
-          onAppearanceChange={handleAppearanceChange}
-          onClose={() => setShowProfileChanger(false)}
-        />
-      )}
     </>
   );
 }
@@ -3977,60 +4044,6 @@ function AnalyticsPanel({ game }){
   const careerWS = seasons.map(s => s.averages?.winShares || (s.averages?.pts || 0) * 0.1);
   const careerVORP = seasons.map(s => s.averages?.vorp || (s.averages?.per || 0) * 0.5 - 5);
   
-  // Enhanced Legacy Score Calculation with more award factors
-  const calculateEnhancedLegacyScore = (player) => {
-    const totals = player.career?.totals || {};
-    const stats = player.career?.stats || {};
-    
-    // Base statistical score (0-300 points)
-    const careerPPG = stats.ppg || 0;
-    const careerRPG = stats.rpg || 0;
-    const careerAPG = stats.apg || 0;
-    const careerPER = stats.per || 0;
-    const careerTS = stats.ts || 0;
-    const gamesPlayed = totals.games || 0;
-    
-    let baseScore = 0;
-    baseScore += Math.min(careerPPG * 8, 200); // Max 200 for scoring
-    baseScore += Math.min(careerRPG * 6, 60); // Max 60 for rebounding
-    baseScore += Math.min(careerAPG * 8, 80); // Max 80 for assists
-    baseScore += Math.min((careerPER - 15) * 10, 100); // Max 100 for efficiency
-    baseScore += Math.min(careerTS * 200, 100); // Max 100 for shooting
-    baseScore += Math.min(gamesPlayed / 82 * 10, 150); // Max 150 for longevity
-    
-    // Major Awards (0-400 points)
-    let awardScore = 0;
-    awardScore += (totals.titles || 0) * 60; // Championships: 60 pts each
-    awardScore += (totals.mvps || 0) * 80; // MVP: 80 pts each
-    awardScore += (totals.finalsMvps || 0) * 50; // Finals MVP: 50 pts each
-    awardScore += (totals.dpoys || 0) * 30; // DPOY: 30 pts each
-    awardScore += (totals.sixthMans || 0) * 15; // 6MOY: 15 pts each
-    awardScore += (totals.roys || 0) * 25; // ROY: 25 pts each
-    awardScore += (totals.mips || 0) * 20; // MIP: 20 pts each
-    
-    // All-Star and honors (0-200 points)
-    let honorScore = 0;
-    honorScore += (totals.allStars || 0) * 8; // All-Star: 8 pts each
-    honorScore += (totals.allNBAs || 0) * 12; // All-NBA: 12 pts each
-    honorScore += (totals.allDefenses || 0) * 10; // All-Defense: 10 pts each
-    honorScore += (totals.scoringTitles || 0) * 15; // Scoring titles: 15 pts each
-    honorScore += (totals.reboundingTitles || 0) * 12; // Rebounding titles: 12 pts each
-    honorScore += (totals.assistTitles || 0) * 12; // Assist titles: 12 pts each
-    
-    // Peak performance bonus (0-100 points)
-    let peakScore = 0;
-    const bestSeason = seasons.reduce((best, season) => {
-      const seasonScore = (season.averages?.pts || 0) + (season.averages?.reb || 0) + (season.averages?.ast || 0);
-      return seasonScore > best.score ? { score: seasonScore, season } : best;
-    }, { score: 0, season: null });
-    
-    if (bestSeason.season) {
-      peakScore += Math.min(bestSeason.score * 2, 100);
-    }
-    
-    return Math.round(Math.max(0, baseScore + awardScore + honorScore + peakScore));
-  };
-  
   // Enhanced ranking designation system
   const getPrestigiousDesignation = (rank, legacyScore) => {
     if (rank <= 1) return { title: "GOAT", color: "#FFD700", tier: "Legendary" };
@@ -4048,8 +4061,8 @@ function AnalyticsPanel({ game }){
     return { title: "Unranked", color: "#696969", tier: "Developing" };
   };
   
-  // Calculate enhanced analytics
-  const playerScore = calculateEnhancedLegacyScore(game);
+  // Calculate enhanced analytics using the stringent scoring system
+  const playerScore = calculatePlayerScore(game);
   const hofChance = getHallOfFameChance(game);
   const currentRankings = generateCurrentLeagueRankings(game);
   const allTimeRankings = generateAllTimeRankings(game);
@@ -4061,11 +4074,25 @@ function AnalyticsPanel({ game }){
   // Generate MVP winners during player's career
   const generateMVPHistory = () => {
     const mvpWinners = [];
+    const playerMVPSeasons = [];
+    
+    // Track which seasons the player won MVP by checking career awards
+    if (game.career?.awards) {
+      game.career.awards.forEach(award => {
+        if (award.award === 'MVP') {
+          playerMVPSeasons.push(award.season);
+        }
+      });
+    }
+    
     seasons.forEach((season, index) => {
-      if (season.stats?.mvp) {
+      const seasonNumber = season.season;
+      const isPlayerMVP = playerMVPSeasons.includes(seasonNumber);
+      
+      if (isPlayerMVP) {
         mvpWinners.push({
-          season: season.season,
-          playerName: game.name,
+          season: seasonNumber,
+          playerName: `${game.firstName || 'Player'} ${game.lastName || ''}`.trim(),
           stats: `${fmt(season.averages?.pts || 0)}/${fmt(season.averages?.reb || 0)}/${fmt(season.averages?.ast || 0)}`,
           team: season.team,
           isPlayer: true
@@ -4074,7 +4101,7 @@ function AnalyticsPanel({ game }){
         // Generate random MVP winner for that season
         const mvpNames = ["LeBron James", "Stephen Curry", "Giannis Antetokounmpo", "Nikola Jokic", "Joel Embiid", "Luka Doncic", "Jayson Tatum", "Kevin Durant"];
         mvpWinners.push({
-          season: season.season,
+          season: seasonNumber,
           playerName: pick(mvpNames),
           stats: `${irnd(25, 35)}/${irnd(8, 15)}/${irnd(6, 12)}`,
           team: pick(Object.keys(NBA_TEAMS)),
@@ -4312,29 +4339,19 @@ function AnalyticsPanel({ game }){
             </div>
             <div style={{maxHeight: '300px', overflowY: 'auto', gap: '8px', display: 'flex', flexDirection: 'column'}}>
               {mvpHistory.slice().reverse().map((mvp, index) => (
-                <div key={index} style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '12px',
-                  borderRadius: '12px',
-                  background: mvp.isPlayer ? 
-                    'linear-gradient(135deg, var(--team-primary), var(--team-secondary))' : 
-                    'var(--bg-secondary)',
-                  border: mvp.isPlayer ? '2px solid var(--team-primary)' : '1px solid var(--border-subtle)',
-                  color: mvp.isPlayer ? 'white' : 'var(--text-primary)'
-                }}>
+                <div key={index} className={`mvp-card ${mvp.isPlayer ? 'player-mvp' : ''}`}>
                   <div>
-                    <div style={{fontWeight: 'bold', fontSize: '14px'}}>
-                      {mvp.isPlayer ? '🏆 ' : ''}{mvp.playerName}
+                    <div style={{fontWeight: 'bold', fontSize: '15px', display: 'flex', alignItems: 'center'}}>
+                      {mvp.isPlayer && <span className="mvp-trophy">🏆</span>}
+                      <span className={mvp.isPlayer ? 'text-elite-readable' : 'text-premium-readable'}>{mvp.playerName}</span>
                     </div>
-                    <div style={{fontSize: '12px', opacity: '0.8'}}>
+                    <div style={{fontSize: '13px', opacity: '0.85', marginTop: '4px'}} className="text-ultra-readable">
                       {mvp.team} • Season {mvp.season}
                     </div>
                   </div>
                   <div style={{textAlign: 'right'}}>
-                    <div style={{fontWeight: 'bold', fontSize: '13px'}}>{mvp.stats}</div>
-                    <div style={{fontSize: '11px', opacity: '0.7'}}>PPG/RPG/APG</div>
+                    <div style={{fontWeight: 'bold', fontSize: '14px'}} className="text-premium-readable">{mvp.stats}</div>
+                    <div style={{fontSize: '11px', opacity: '0.75', marginTop: '2px'}} className="text-ultra-readable">PPG/RPG/APG</div>
                   </div>
                 </div>
               ))}
