@@ -24,6 +24,9 @@ const validateMoney = (player) => {
   }
   return player;
 };
+
+// Global championship tracking
+const CHAMPIONSHIP_WINNERS = {};
 const fmt = (n, d = 1) => Number(n).toFixed(d);
 const sum = (arr) => arr.reduce((a, b) => a + b, 0);
 
@@ -410,9 +413,6 @@ const DATING_POOL = [
   { name: 'Casey Brown', profession: 'Athlete', appeal: 87, fameRequirement: 30 }
 ];
 
-// Championship winners tracking
-const CHAMPIONSHIP_WINNERS = {};
-
 const NBA_TEAMS = {
   "Lakers": { 
     name: "Los Angeles Lakers", 
@@ -716,13 +716,18 @@ function initializeLeague() {
       baseStrength: teamInfo.strength,
       currentStrength: adjustedStrength,
       championships: 0,
+      championshipYears: [],
       playoffAppearances: 0,
       lastPlayoff: null,
       lastChampionship: null,
       seasonProgress: 0 // Tracks how many games into season
     };
   });
-  return { standings, season: 1 };
+  return { 
+    standings, 
+    season: 1,
+    championshipHistory: {}
+  };
 }
 
 // Function to update standings consistently across the game
@@ -1142,21 +1147,50 @@ function endSeasonAwards(player, league){
 }
 
 function seasonAverages(s){
-  const gp = Math.max(1, s.games);
-  const mins = s.minutes/gp, pts=s.points/gp, reb=s.rebounds/gp, ast=s.assists/gp, stl=s.steals/gp, blk=s.blocks/gp;
-  const fgPct = s.fgAtt? s.fgMade/s.fgAtt : 0; 
-  const tpPct = s.threesAtt? s.threesMade/s.threesAtt:0; 
-  const ftPct = s.ftAtt? s.ftMade/s.ftAtt:0;
-  const winsPct = gp? s.wins/gp:0;
-  const improved = gp>10 && (pts>18 || ast>7 || reb>10) && chance(0.3);
-  const benchBeast = mins<24 && pts>14 && chance(0.4);
+  if (!s) return { gp: 0, mins: 0, pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, fgPct: 0, tpPct: 0, ftPct: 0, winsPct: 0, improved: false, benchBeast: false, per: 0, ts: 0, usage: 0 };
   
-  // Calculate advanced stats averages
-  const per = s.gameLogs.length ? s.gameLogs.reduce((sum, log) => sum + (log.per || 0), 0) / s.gameLogs.length : 0;
-  const ts = s.gameLogs.length ? s.gameLogs.reduce((sum, log) => sum + (log.ts || 0), 0) / s.gameLogs.length : 0;
-  const usage = s.gameLogs.length ? s.gameLogs.reduce((sum, log) => sum + (log.usage || 0), 0) / s.gameLogs.length : 0;
+  const gp = Math.max(1, s.games || 0);
+  const mins = (s.minutes || 0)/gp;
+  const pts = (s.points || 0)/gp;
+  const reb = (s.rebounds || 0)/gp;
+  const ast = (s.assists || 0)/gp;
+  const stl = (s.steals || 0)/gp;
+  const blk = (s.blocks || 0)/gp;
   
-  return { gp, mins, pts, reb, ast, stl, blk, fgPct, tpPct, ftPct, winsPct, improved, benchBeast, per, ts, usage };
+  const fgPct = (s.fgAtt && s.fgAtt > 0) ? (s.fgMade || 0)/(s.fgAtt) : 0; 
+  const tpPct = (s.threesAtt && s.threesAtt > 0) ? (s.threesMade || 0)/(s.threesAtt) : 0; 
+  const ftPct = (s.ftAtt && s.ftAtt > 0) ? (s.ftMade || 0)/(s.ftAtt) : 0;
+  const winsPct = (s.games && s.games > 0) ? (s.wins || 0)/(s.games) : 0;
+  
+  const actualGamesPlayed = s.games || 0;
+  const improved = actualGamesPlayed > 10 && (pts > 18 || ast > 7 || reb > 10) && chance(0.3);
+  const benchBeast = mins < 24 && pts > 14 && chance(0.4);
+  
+  // Calculate advanced stats averages with safety checks
+  const gameLogs = s.gameLogs || [];
+  const per = gameLogs.length > 0 ? gameLogs.reduce((sum, log) => sum + ((log && log.per) || 0), 0) / gameLogs.length : 0;
+  const ts = gameLogs.length > 0 ? gameLogs.reduce((sum, log) => sum + ((log && log.ts) || 0), 0) / gameLogs.length : 0;
+  const usage = gameLogs.length > 0 ? gameLogs.reduce((sum, log) => sum + ((log && log.usage) || 0), 0) / gameLogs.length : 0;
+  
+  // Ensure no NaN values
+  return { 
+    gp: actualGamesPlayed, 
+    mins: isNaN(mins) ? 0 : mins, 
+    pts: isNaN(pts) ? 0 : pts, 
+    reb: isNaN(reb) ? 0 : reb, 
+    ast: isNaN(ast) ? 0 : ast, 
+    stl: isNaN(stl) ? 0 : stl, 
+    blk: isNaN(blk) ? 0 : blk, 
+    fgPct: isNaN(fgPct) ? 0 : fgPct, 
+    tpPct: isNaN(tpPct) ? 0 : tpPct, 
+    ftPct: isNaN(ftPct) ? 0 : ftPct, 
+    winsPct: isNaN(winsPct) ? 0 : winsPct, 
+    improved, 
+    benchBeast, 
+    per: isNaN(per) ? 0 : per, 
+    ts: isNaN(ts) ? 0 : ts, 
+    usage: isNaN(usage) ? 0 : usage 
+  };
 }
 
 function playoffsSim(player, gameState){
@@ -2072,6 +2106,17 @@ export default function BasketballLife(){
         p.week = 1; 
         p.age += 1; 
         progressAging(p);
+        
+        // Ensure game state is properly initialized for new season
+        if (!p.stats) p.stats = resetSeasonStats();
+        if (!p.ratings) p.ratings = { overall: 75 }; // fallback
+        if (!p.career) p.career = { seasons: [], awards: [], timeline: [], totals: resetCareerTotals() };
+        if (!p.team) p.team = "LAL"; // fallback team
+        if (!p.firstName || !p.lastName) {
+          p.firstName = "Player";
+          p.lastName = "Name";
+        }
+        
         p.career.timeline.push(event("Season",`Entering Season ${p.season}`));
       }
 
@@ -2226,14 +2271,51 @@ export default function BasketballLife(){
         player: `${p.firstName} ${p.lastName}`,
         isPlayerTeam: true
       };
+      
+      // Update league standings with championship
+      if (p.league && p.league.standings && p.league.standings[p.team]) {
+        p.league.standings[p.team].championships++;
+        p.league.standings[p.team].championshipYears.push(p.season);
+        p.league.standings[p.team].lastChampionship = p.season;
+      }
+      
+      // Add to league championship history
+      if (!p.league.championshipHistory) p.league.championshipHistory = {};
+      p.league.championshipHistory[p.season] = {
+        team: p.team,
+        teamName: NBA_TEAMS[p.team]?.name || p.team,
+        player: `${p.firstName} ${p.lastName}`,
+        isPlayerTeam: true
+      };
     } else {
       // Player's team didn't win - generate a champion
       if (!CHAMPIONSHIP_WINNERS[p.season]) {
         const possibleChampions = Object.keys(NBA_TEAMS).filter(team => team !== p.team);
         const championTeam = pick(possibleChampions);
+        const championTeamName = NBA_TEAMS[championTeam]?.name || championTeam;
+        
         CHAMPIONSHIP_WINNERS[p.season] = {
           team: championTeam,
-          teamName: NBA_TEAMS[championTeam]?.name || championTeam,
+          teamName: championTeamName,
+          player: null,
+          isPlayerTeam: false
+        };
+        
+        // Update league standings with championship
+        if (p.league && p.league.standings && p.league.standings[championTeam]) {
+          p.league.standings[championTeam].championships++;
+          if (!p.league.standings[championTeam].championshipYears) {
+            p.league.standings[championTeam].championshipYears = [];
+          }
+          p.league.standings[championTeam].championshipYears.push(p.season);
+          p.league.standings[championTeam].lastChampionship = p.season;
+        }
+        
+        // Add to league championship history
+        if (!p.league.championshipHistory) p.league.championshipHistory = {};
+        p.league.championshipHistory[p.season] = {
+          team: championTeam,
+          teamName: championTeamName,
           player: null,
           isPlayerTeam: false
         };
@@ -2604,8 +2686,19 @@ export default function BasketballLife(){
   }
 
   // ---------- UI ----------
-  const avg = useMemo(()=> seasonAverages(game.stats), [game.stats]);
-  const careerPPG = game.career.totals.games? game.career.totals.points / game.career.totals.games : 0;
+  const avg = useMemo(()=> {
+    if (!game || !game.stats) {
+      return { gp: 0, mins: 0, pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, fgPct: 0, tpPct: 0, ftPct: 0, winsPct: 0, improved: false, benchBeast: false, per: 0, ts: 0, usage: 0 };
+    }
+    return seasonAverages(game.stats);
+  }, [game?.stats]);
+  
+  const careerPPG = (game?.career?.totals?.games && game.career.totals.games > 0) ? game.career.totals.points / game.career.totals.games : 0;
+
+  // Ensure game state is valid before rendering
+  if (!game || !game.firstName || !game.lastName) {
+    return <div className="fade-in">Loading...</div>;
+  }
 
   return (
     <div className="fade-in">
@@ -2814,12 +2907,23 @@ function StatPill({ label, value, sub }){
 }
 
 function HomePanel({ game, avg, onWeek, onEvent, onSocialMedia, onSimMonth, onSimSeason }){
-  const teamInfo = NBA_TEAMS[game.team];
+  // Safety checks to prevent rendering issues
+  if (!game || !avg) {
+    return <div className="panel panel-content">Loading game data...</div>;
+  }
   
-  // Get current team standing from persistent standings
-  const standings = getStandings(game);
-  const teamRank = standings.findIndex(team => team.isPlayerTeam) + 1;
-  const ageMultiplier = getAgeMultiplier(game.age);
+  const teamInfo = NBA_TEAMS[game.team] || { name: game.team, strength: game.teamStrength || 75, colors: { primary: '#1f2937' } };
+  
+  // Get current team standing from persistent standings with safety check
+  let teamRank = 1;
+  try {
+    const standings = getStandings(game);
+    teamRank = standings.findIndex(team => team.isPlayerTeam) + 1 || 1;
+  } catch (e) {
+    console.warn('Error getting standings:', e);
+  }
+  
+  const ageMultiplier = getAgeMultiplier(game.age || 22);
   
   return (
     <div className="grid-2" style={{gap: '12px'}}>
@@ -2829,11 +2933,11 @@ function HomePanel({ game, avg, onWeek, onEvent, onSocialMedia, onSimMonth, onSi
         <div className="stats-grid">
           <div className="compact-stat">
             <div className="compact-stat-label">Overall</div>
-            <div className="compact-stat-value">{game.ratings.overall}</div>
+            <div className="compact-stat-value">{game.ratings?.overall || 75}</div>
           </div>
           <div className="compact-stat">
             <div className="compact-stat-label">Age</div>
-            <div className="compact-stat-value" style={{color: game.age <= 26 ? '#10b981' : game.age <= 30 ? '#f59e0b' : '#ef4444'}}>{game.age}</div>
+            <div className="compact-stat-value" style={{color: (game.age || 22) <= 26 ? '#10b981' : (game.age || 22) <= 30 ? '#f59e0b' : '#ef4444'}}>{game.age || 22}</div>
           </div>
           <div className="compact-stat">
             <div className="compact-stat-label">Performance</div>
@@ -2841,45 +2945,45 @@ function HomePanel({ game, avg, onWeek, onEvent, onSocialMedia, onSimMonth, onSi
           </div>
           <div className="compact-stat">
             <div className="compact-stat-label">Health</div>
-            <div className="compact-stat-value">{game.health}</div>
+            <div className="compact-stat-value">{game.health || 100}</div>
           </div>
           <div className="compact-stat">
             <div className="compact-stat-label">Peak</div>
-            <div className="compact-stat-value">{game.peak}</div>
+            <div className="compact-stat-value">{game.peak || 100}</div>
           </div>
           <div className="compact-stat">
             <div className="compact-stat-label">Morale</div>
-            <div className="compact-stat-value">{game.morale}</div>
+            <div className="compact-stat-value">{game.morale || 50}</div>
           </div>
           <div className="compact-stat">
             <div className="compact-stat-label">Fame</div>
-            <div className="compact-stat-value">{game.fame}</div>
+            <div className="compact-stat-value">{game.fame || 0}</div>
           </div>
           <div className="compact-stat">
             <div className="compact-stat-label">Chemistry</div>
-            <div className="compact-stat-value">{game.teamChem}</div>
+            <div className="compact-stat-value">{game.teamChem || 50}</div>
           </div>
         </div>
         
         {/* Season Stats */}
         <div className="panel panel-content-tight" style={{marginBottom: '12px'}}>
-          <h3 style={{marginBottom: '8px', color: 'var(--team-primary)'}}>Season {game.season} Stats</h3>
+          <h3 style={{marginBottom: '8px', color: 'var(--team-primary)'}}>Season {game.season || 1} Stats</h3>
           <div className="grid-4">
             <div className="compact-stat">
               <div className="compact-stat-label">PPG</div>
-              <div className="compact-stat-value">{avg.pts.toFixed(1)}</div>
+              <div className="compact-stat-value">{(avg.pts || 0).toFixed(1)}</div>
             </div>
             <div className="compact-stat">
               <div className="compact-stat-label">RPG</div>
-              <div className="compact-stat-value">{avg.reb.toFixed(1)}</div>
+              <div className="compact-stat-value">{(avg.reb || 0).toFixed(1)}</div>
             </div>
             <div className="compact-stat">
               <div className="compact-stat-label">APG</div>
-              <div className="compact-stat-value">{avg.ast.toFixed(1)}</div>
+              <div className="compact-stat-value">{(avg.ast || 0).toFixed(1)}</div>
             </div>
             <div className="compact-stat">
               <div className="compact-stat-label">FG%</div>
-              <div className="compact-stat-value">{(avg.fgPct*100).toFixed(0)}%</div>
+              <div className="compact-stat-value">{((avg.fgPct || 0)*100).toFixed(0)}%</div>
             </div>
           </div>
         </div>
@@ -2891,7 +2995,7 @@ function HomePanel({ game, avg, onWeek, onEvent, onSocialMedia, onSimMonth, onSi
             <button className="btn btn-primary" onClick={onWeek}>Next Week</button>
             <button className="btn btn-secondary" onClick={onEvent}>Life Event</button>
             <button className="btn btn-accent" onClick={onSocialMedia}>Social Media</button>
-            <button className="btn btn-ghost" style={{fontSize: '11px'}}>📱 {(game.followers / 1000000).toFixed(1)}M</button>
+            <button className="btn btn-ghost" style={{fontSize: '11px'}}>📱 {((game.followers || 0) / 1000000).toFixed(1)}M</button>
             <button className="btn btn-team-outline" onClick={onSimMonth}>Sim Month</button>
             <button className="btn btn-team-outline" onClick={onSimSeason}>Sim Season</button>
           </div>
@@ -2937,12 +3041,12 @@ function HomePanel({ game, avg, onWeek, onEvent, onSocialMedia, onSimMonth, onSi
           <h3 style={{marginBottom: '8px', color: 'var(--team-primary)'}}>Contract</h3>
           <div style={{padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px'}}>
             <div style={{fontSize: '18px', fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '4px'}}>
-              ${game.contract.salary}k/year
+              ${(game.contract?.salary || 0)}k/year
             </div>
             <div style={{fontSize: '14px', color: 'var(--text-secondary)'}}>
-              Year {game.contract.year} of {game.contract.years}
+              Year {game.contract?.year || 1} of {game.contract?.years || 1}
             </div>
-            {game.contract.clause !== "None" && (
+            {game.contract?.clause && game.contract.clause !== "None" && (
               <div style={{fontSize: '12px', color: 'var(--team-primary)', marginTop: '4px'}}>
                 {game.contract.clause}
               </div>
@@ -3814,67 +3918,255 @@ function LeaguePanel({ game }){
   // Use persistent standings from game state
   const eastStandings = getConferenceStandings(game, "East");
   const westStandings = getConferenceStandings(game, "West");
+  
+  // Get championship history
+  const championshipHistory = game.league?.championshipHistory || {};
+  const sortedChampionshipYears = Object.keys(championshipHistory).sort((a, b) => b - a);
 
   const renderStandings = (teams, conference) => (
-    <div className="panel panel-content-tight">
-      <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>{conference} Conference</h3>
-      <div style={{gap: '4px', display: 'flex', flexDirection: 'column'}}>
-        {teams.map((team, index) => (
-          <div 
-            key={team.team} 
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '8px 12px',
-              borderRadius: '8px',
-              backgroundColor: team.isPlayerTeam ? 'var(--team-primary)' : 'var(--bg-secondary)',
-              opacity: team.isPlayerTeam ? '0.9' : '0.7',
-              border: team.isPlayerTeam ? '1px solid var(--team-secondary)' : '1px solid transparent'
-            }}
-          >
-            <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
-              <span style={{fontSize: '12px', fontWeight: 'bold', color: 'var(--text-secondary)', width: '20px'}}>{index + 1}</span>
-              <div>
-                <div style={{
-                  fontSize: '13px', 
-                  fontWeight: '600',
-                  color: team.isPlayerTeam ? 'var(--team-text)' : 'var(--text-primary)'
-                }}>
-                  {team.name}
+    <div className="panel">
+      <div className="panel-content">
+        <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>{conference} Conference</h3>
+        <div style={{gap: '4px', display: 'flex', flexDirection: 'column'}}>
+          {teams.map((team, index) => {
+            const teamChampionships = team.championships || 0;
+            const lastChampionship = team.lastChampionship;
+            
+            return (
+              <div 
+                key={team.team} 
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  backgroundColor: team.isPlayerTeam ? 'var(--team-primary)' : 'var(--bg-secondary)',
+                  opacity: team.isPlayerTeam ? '0.9' : '0.7',
+                  border: team.isPlayerTeam ? '1px solid var(--team-secondary)' : '1px solid transparent'
+                }}
+              >
+                <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                  <span style={{fontSize: '12px', fontWeight: 'bold', color: 'var(--text-secondary)', width: '20px'}}>{index + 1}</span>
+                  <div>
+                    <div style={{
+                      fontSize: '13px', 
+                      fontWeight: '600',
+                      color: team.isPlayerTeam ? 'var(--team-text)' : 'var(--text-primary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}>
+                      {team.name}
+                      {teamChampionships > 0 && (
+                        <div style={{display: 'flex', alignItems: 'center', gap: '2px'}}>
+                          {Array.from({length: Math.min(teamChampionships, 3)}, (_, i) => (
+                            <span key={i} style={{fontSize: '10px'}}>🏆</span>
+                          ))}
+                          {teamChampionships > 3 && (
+                            <span style={{fontSize: '10px', fontWeight: 'bold', color: '#ffd700'}}>
+                              +{teamChampionships - 3}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{fontSize: '10px', color: team.isPlayerTeam ? 'var(--team-text)' : 'var(--text-muted)'}}>
+                      Strength: {team.baseStrength || team.currentStrength}
+                      {lastChampionship && ` • Last Title: S${lastChampionship}`}
+                    </div>
+                  </div>
                 </div>
-                <div style={{fontSize: '10px', color: team.isPlayerTeam ? 'var(--team-text)' : 'var(--text-muted)'}}>
-                  Strength: {team.baseStrength || team.currentStrength}
+                <div style={{textAlign: 'right'}}>
+                  <div style={{
+                    fontSize: '13px', 
+                    fontWeight: 'bold',
+                    color: team.isPlayerTeam ? 'var(--team-text)' : 'var(--text-primary)'
+                  }}>
+                    {team.wins}-{team.losses}
+                  </div>
+                  <div style={{
+                    fontSize: '11px',
+                    color: team.isPlayerTeam ? 'var(--team-text)' : 'var(--text-secondary)'
+                  }}>
+                    {(team.winPct * 100).toFixed(1)}%
+                  </div>
                 </div>
               </div>
-            </div>
-            <div style={{textAlign: 'right'}}>
-              <div style={{
-                fontSize: '13px', 
-                fontWeight: 'bold',
-                color: team.isPlayerTeam ? 'var(--team-text)' : 'var(--text-primary)'
-              }}>
-                {team.wins}-{team.losses}
-              </div>
-              <div style={{
-                fontSize: '11px',
-                color: team.isPlayerTeam ? 'var(--team-text)' : 'var(--text-secondary)'
-              }}>
-                {(team.winPct * 100).toFixed(1)}%
-              </div>
-            </div>
-          </div>
-        ))}
+            );
+          })}
+        </div>
       </div>
     </div>
   );
 
   return (
-    <div className="grid-2">
-      {renderStandings(eastStandings, "Eastern")}
-      {renderStandings(westStandings, "Western")}
+    <div className="space-y-6">
+      <div className="grid lg:grid-cols-2 gap-6">
+        {renderStandings(eastStandings, "Eastern")}
+        {renderStandings(westStandings, "Western")}
+      </div>
+      
+      {sortedChampionshipYears.length > 0 && (
+        <div className="panel">
+          <div className="panel-content">
+            <h2>🏆 Championship History</h2>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mt-4">
+              {sortedChampionshipYears.slice(0, 12).map(year => {
+                const champion = championshipHistory[year];
+                const teamInfo = NBA_TEAMS[champion.team];
+                
+                return (
+                  <div 
+                    key={year}
+                    className="panel"
+                    style={{
+                      background: champion.isPlayerTeam 
+                        ? `linear-gradient(135deg, ${teamInfo?.colors.primary}30, ${teamInfo?.colors.secondary}30)`
+                        : 'rgba(100,100,100,0.1)',
+                      border: champion.isPlayerTeam 
+                        ? `1px solid ${teamInfo?.colors.primary}80`
+                        : '1px solid rgba(255,255,255,0.1)',
+                      padding: '12px'
+                    }}
+                  >
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: '8px'
+                    }}>
+                      <span style={{
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: champion.isPlayerTeam ? teamInfo?.colors.primary : 'var(--text-primary)'
+                      }}>
+                        Season {year}
+                      </span>
+                      <span style={{fontSize: '16px'}}>🏆</span>
+                    </div>
+                    
+                    <div style={{
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      color: champion.isPlayerTeam ? teamInfo?.colors.primary : 'var(--text-primary)',
+                      marginBottom: '4px'
+                    }}>
+                      {champion.teamName}
+                    </div>
+                    
+                    {champion.player && (
+                      <div style={{
+                        fontSize: '11px',
+                        color: champion.isPlayerTeam ? '#ffd700' : 'var(--text-secondary)',
+                        fontWeight: champion.isPlayerTeam ? 'bold' : 'normal'
+                      }}>
+                        {champion.isPlayerTeam ? '⭐ ' : ''}{champion.player}
+                      </div>
+                    )}
+                    
+                    {!champion.player && (
+                      <div style={{
+                        fontSize: '11px',
+                        color: 'var(--text-muted)',
+                        fontStyle: 'italic'
+                      }}>
+                        Team Championship
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            
+            {sortedChampionshipYears.length > 12 && (
+              <div style={{textAlign: 'center', marginTop: '1rem', opacity: 0.7}}>
+                And {sortedChampionshipYears.length - 12} more seasons...
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      
+      <div className="grid lg:grid-cols-2 gap-6">
+        <div className="panel">
+          <div className="panel-content">
+            <h3>📊 League Stats</h3>
+            <div className="space-y-3 mt-4">
+              <div className="flex justify-between">
+                <span>Current Season:</span>
+                <span className="font-bold">Season {game.season}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Total Championships Awarded:</span>
+                <span className="font-bold">{sortedChampionshipYears.length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Your Championships:</span>
+                <span className="font-bold text-yellow-400">
+                  {Object.values(championshipHistory).filter(c => c.isPlayerTeam).length} 🏆
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Most Successful Team:</span>
+                <span className="font-bold">
+                  {getMostSuccessfulTeam(game.league?.standings || {})}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="panel">
+          <div className="panel-content">
+            <h3>🔥 Current Season</h3>
+            <div className="space-y-3 mt-4">
+              <div className="flex justify-between">
+                <span>Your Team:</span>
+                <span className="font-bold" style={{color: 'var(--team-primary)'}}>
+                  {game.team}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Conference:</span>
+                <span className="font-bold">
+                  {NBA_TEAMS[game.team]?.conference || 'Unknown'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Team Record:</span>
+                <span className="font-bold">
+                  {game.league?.standings?.[game.team]?.wins || 0}-{game.league?.standings?.[game.team]?.losses || 0}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Team Championships:</span>
+                <span className="font-bold text-yellow-400">
+                  {game.league?.standings?.[game.team]?.championships || 0} 🏆
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
+}
+
+// Helper function to find most successful team
+function getMostSuccessfulTeam(standings) {
+  let mostSuccessful = null;
+  let maxChampionships = 0;
+  
+  Object.entries(standings).forEach(([teamKey, teamData]) => {
+    if ((teamData.championships || 0) > maxChampionships) {
+      maxChampionships = teamData.championships || 0;
+      mostSuccessful = teamData.name || teamKey;
+    }
+  });
+  
+  return mostSuccessful || 'N/A';
 }
 
 function ContractsPanel({ game }){
@@ -3958,38 +4250,249 @@ function ContractsPanel({ game }){
 }
 
 function AwardsPanel({ game }){
-  const grouped = game.career.awards.reduce((acc,a)=>{(acc[a.season]=acc[a.season]||[]).push(a.award); return acc;},{});
+  const teamThemes = {};
+  
+  // Group seasons by team with comprehensive data
+  game.career.seasons.forEach(season => {
+    if (!teamThemes[season.team]) {
+      teamThemes[season.team] = {
+        seasons: [],
+        totalAwards: [],
+        totalStats: { points: 0, rebounds: 0, assists: 0, games: 0 },
+        championships: 0,
+        bestSeason: null
+      };
+    }
+    
+    const seasonAwards = game.career.awards.filter(a => a.season === season.season);
+    const isChampion = season.stats.champion;
+    
+    teamThemes[season.team].seasons.push({
+      season: season.season,
+      stats: season.stats,
+      averages: season.averages,
+      overall: season.overall,
+      awards: seasonAwards.map(a => a.award),
+      champion: isChampion
+    });
+    
+    teamThemes[season.team].totalAwards.push(...seasonAwards);
+    teamThemes[season.team].totalStats.points += season.stats.points || 0;
+    teamThemes[season.team].totalStats.rebounds += season.stats.rebounds || 0;
+    teamThemes[season.team].totalStats.assists += season.stats.assists || 0;
+    teamThemes[season.team].totalStats.games += season.stats.games || 0;
+    
+    if (isChampion) teamThemes[season.team].championships++;
+    
+    // Track best season for each team
+    if (!teamThemes[season.team].bestSeason || 
+        (season.averages?.per || 0) > (teamThemes[season.team].bestSeason.averages?.per || 0)) {
+      teamThemes[season.team].bestSeason = {
+        season: season.season,
+        stats: season.stats,
+        averages: season.averages,
+        overall: season.overall
+      };
+    }
+  });
+
   return (
-    <div className="grid lg:grid-cols-2 gap-6">
-      <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 border border-slate-700">
-        <div className="font-bold text-xl mb-4 text-slate-100">Season Awards</div>
-        {Object.keys(grouped).length? (
-          <div className="space-y-3">
-            {Object.entries(grouped).map(([s, list])=> (
-              <div key={s} className="bg-gradient-to-r from-amber-900/20 to-yellow-900/20 rounded-xl p-4 border border-amber-600/30">
-                <div className="font-semibold text-amber-200">Season {s}</div>
-                <div className="text-sm text-amber-100 mt-1">{list.join(", ")}</div>
-              </div>
-            ))}
+    <div className="space-y-4">
+      {/* Career Overview Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="panel" style={{padding: '12px'}}>
+          <div className="text-center">
+            <div className="text-lg font-bold text-yellow-400">{Object.values(teamThemes).reduce((sum, team) => sum + team.championships, 0)}</div>
+            <div className="text-xs opacity-75">Championships 🏆</div>
           </div>
-        ): <div className="text-slate-400 text-center py-8">No awards yet. Time to ball out!</div>}
+        </div>
+        <div className="panel" style={{padding: '12px'}}>
+          <div className="text-center">
+            <div className="text-lg font-bold text-blue-400">{game.career.totals.mvps || 0}</div>
+            <div className="text-xs opacity-75">MVP Awards</div>
+          </div>
+        </div>
+        <div className="panel" style={{padding: '12px'}}>
+          <div className="text-center">
+            <div className="text-lg font-bold text-purple-400">{game.career.totals.allstars || 0}</div>
+            <div className="text-xs opacity-75">All-Star Games</div>
+          </div>
+        </div>
+        <div className="panel" style={{padding: '12px'}}>
+          <div className="text-center">
+            <div className="text-lg font-bold text-green-400">{Object.keys(teamThemes).length}</div>
+            <div className="text-xs opacity-75">Teams Played</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Career by Team - Compact Layout */}
+      <div className="panel">
+        <div className="panel-content">
+          <h2>🏆 Career by Team</h2>
+          
+          <div className="space-y-3 mt-4">
+            {Object.entries(teamThemes).map(([team, data]) => {
+              const teamInfo = NBA_TEAMS[team];
+              const avgPPG = data.totalStats.games ? (data.totalStats.points / data.totalStats.games).toFixed(1) : 0;
+              const avgRPG = data.totalStats.games ? (data.totalStats.rebounds / data.totalStats.games).toFixed(1) : 0;
+              const avgAPG = data.totalStats.games ? (data.totalStats.assists / data.totalStats.games).toFixed(1) : 0;
+              
+              return (
+                <div 
+                  key={team} 
+                  className="panel"
+                  style={{
+                    background: `linear-gradient(135deg, ${teamInfo?.colors.primary}20, ${teamInfo?.colors.secondary}20)`,
+                    border: `1px solid ${teamInfo?.colors.primary}60`,
+                    padding: '16px'
+                  }}
+                >
+                  {/* Team Header - Compact */}
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div 
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
+                        style={{ background: teamInfo?.colors.primary }}
+                      >
+                        {team.slice(0, 2)}
+                      </div>
+                      <div>
+                        <h3 style={{ color: teamInfo?.colors.primary, fontSize: '16px', margin: 0 }}>{team}</h3>
+                        <div className="text-xs opacity-75">
+                          {data.seasons.length} seasons • {avgPPG}/{avgRPG}/{avgAPG}
+                          {data.championships > 0 && ` • ${data.championships}🏆`}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-bold">{data.totalAwards.length} Awards</div>
+                      {data.bestSeason && (
+                        <div className="text-xs opacity-75">Best: S{data.bestSeason.season} ({data.bestSeason.overall} OVR)</div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Season Cards - Ultra Compact */}
+                  <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2">
+                    {data.seasons.map((season, i) => (
+                      <div 
+                        key={i} 
+                        className="relative group cursor-pointer"
+                        style={{ 
+                          background: season.champion ? 'linear-gradient(135deg, #ffd700, #ff6b35)' : 'rgba(0,0,0,0.4)',
+                          border: `1px solid ${season.champion ? '#ffd700' : 'rgba(255,255,255,0.2)'}`,
+                          borderRadius: '6px',
+                          padding: '6px',
+                          minHeight: '60px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'center',
+                          alignItems: 'center'
+                        }}
+                      >
+                        <div className="text-xs font-bold" style={{ color: season.champion ? '#000' : '#fff' }}>
+                          S{season.season}
+                        </div>
+                        <div className="text-xs" style={{ color: season.champion ? '#000' : '#ccc' }}>
+                          {season.overall}
+                        </div>
+                        {season.champion && <div className="text-xs">🏆</div>}
+                        {season.awards.length > 0 && <div className="text-xs">⭐</div>}
+                        
+                        {/* Hover tooltip */}
+                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block z-10">
+                          <div className="bg-black text-white text-xs rounded px-2 py-1 whitespace-nowrap shadow-lg">
+                            <div>Season {season.season} • {season.overall} OVR</div>
+                            <div>{season.averages?.ppg?.toFixed(1) || 0} PPG • PER {season.averages?.per?.toFixed(1) || 0}</div>
+                            {season.awards.length > 0 && <div className="text-yellow-300">{season.awards.join(", ")}</div>}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
       
-      <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 border border-slate-700">
-        <div className="font-bold text-xl mb-4 text-slate-100">Career Achievements</div>
-        <div className="grid grid-cols-2 gap-3">
-          <StatPill label="Games" value={game.career.totals.games.toLocaleString()} />
-          <StatPill label="Points" value={game.career.totals.points.toLocaleString()} />
-          <StatPill label="Career PPG" value={fmt(game.career.totals.games? game.career.totals.points/game.career.totals.games:0)} />
-          <StatPill label="Career APG" value={fmt(game.career.totals.games? game.career.totals.assists/game.career.totals.games:0)} />
-          <StatPill label="Career RPG" value={fmt(game.career.totals.games? game.career.totals.rebounds/game.career.totals.games:0)} />
-          <StatPill label="Titles" value={game.career.totals.titles} />
-          <StatPill label="MVPs" value={game.career.totals.mvps} />
-          <StatPill label="Finals MVPs" value={game.career.totals.finalsMVPs} />
-          <StatPill label="All-Stars" value={game.career.totals.allstars} />
-          <StatPill label="DPOY" value={game.career.totals.dpoys} />
-          <StatPill label="6MOY" value={game.career.totals.sixmoys} />
-          <StatPill label="Scoring Titles" value={game.career.totals.scoring} />
+      {/* Detailed Career Stats */}
+      <div className="grid lg:grid-cols-2 gap-4">
+        <div className="panel">
+          <div className="panel-content">
+            <h3>📊 Career Totals</h3>
+            <div className="grid grid-cols-3 gap-3 mt-3">
+              <div className="text-center">
+                <div className="text-lg font-bold text-blue-400">{game.career.totals.points?.toLocaleString() || 0}</div>
+                <div className="text-xs opacity-75">Career Points</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-bold text-green-400">{game.career.totals.rebounds?.toLocaleString() || 0}</div>
+                <div className="text-xs opacity-75">Career Rebounds</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-bold text-purple-400">{game.career.totals.assists?.toLocaleString() || 0}</div>
+                <div className="text-xs opacity-75">Career Assists</div>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-3 gap-3 mt-3">
+              <div className="text-center">
+                <div className="text-sm font-bold">{fmt(game.career.totals.games ? game.career.totals.points/game.career.totals.games : 0)}</div>
+                <div className="text-xs opacity-75">PPG</div>
+              </div>
+              <div className="text-center">
+                <div className="text-sm font-bold">{fmt(game.career.totals.games ? game.career.totals.rebounds/game.career.totals.games : 0)}</div>
+                <div className="text-xs opacity-75">RPG</div>
+              </div>
+              <div className="text-center">
+                <div className="text-sm font-bold">{fmt(game.career.totals.games ? game.career.totals.assists/game.career.totals.games : 0)}</div>
+                <div className="text-xs opacity-75">APG</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="panel">
+          <div className="panel-content">
+            <h3>🏆 Major Awards</h3>
+            <div className="grid grid-cols-2 gap-2 mt-3 text-sm">
+              <div className="flex justify-between">
+                <span>Championships:</span>
+                <span className="font-bold text-yellow-400">{game.career.totals.titles || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>MVPs:</span>
+                <span className="font-bold text-blue-400">{game.career.totals.mvps || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Finals MVPs:</span>
+                <span className="font-bold text-purple-400">{game.career.totals.finalsMVPs || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>All-Stars:</span>
+                <span className="font-bold text-red-400">{game.career.totals.allstars || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>DPOY:</span>
+                <span className="font-bold text-green-400">{game.career.totals.dpoys || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>6MOY:</span>
+                <span className="font-bold text-orange-400">{game.career.totals.sixmoys || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Scoring Titles:</span>
+                <span className="font-bold text-pink-400">{game.career.totals.scoring || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Games Played:</span>
+                <span className="font-bold">{game.career.totals.games?.toLocaleString() || 0}</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
