@@ -508,9 +508,7 @@ h1 {
   background: linear-gradient(135deg, #10b981, #059669);
   border-color: rgba(16, 185, 129, 0.3);
   color: white;
-<<<<<<< HEAD
   font-weight: 600;
-=======
 }
 
 /* Team-specific button variant */
@@ -634,7 +632,6 @@ h1 {
 .btn-success {
   background: linear-gradient(135deg, var(--ui-success), #059669);
   box-shadow: var(--shadow-lg), 0 0 20px rgba(16, 185, 129, 0.3);
->>>>>>> 6d13d4f45e9b02546bd927829a745d09c194e7ce
 }
 
 .btn-success:hover {

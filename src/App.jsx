@@ -915,19 +915,11 @@ function newPlayer(custom){
   const arch = custom?.archetype || pickArchetype();
   const ratings = baseRatings(arch);
   const rookie = rookieContract(ratings.overall);
-<<<<<<< HEAD
-  const appearance = generateAppearance();
-  
-  return {
-    firstName, lastName, age, archetype: arch, ratings, potential: clamp(ratings.overall + irnd(4,15), 70, 99),
-    appearance, // New player appearance
-=======
   const appearance = custom?.appearance || generateAppearance();
   
   return {
-    name, age, archetype: arch, ratings, potential: clamp(ratings.overall + irnd(4,15), 70, 99),
+    firstName, lastName, age, archetype: arch, ratings, potential: clamp(ratings.overall + irnd(4,15), 70, 99),
     appearance,
->>>>>>> 6d13d4f45e9b02546bd927829a745d09c194e7ce
     morale: 70, health: 100, peak: 90, fame: 5, followers: irnd(1000, 5000), cash: 50, 
     endorsements: [], shoeDeals: [], premiumServices: [],
     // New life features
@@ -2966,10 +2958,16 @@ export default function BasketballLife(){
 
   return (
     <div className="fade-in">
-<<<<<<< HEAD
       {!game.retired ? (
         <>
-          <Header game={game} onReset={resetAll} onExport={exportSave} onImport={()=>setShowImport(true)} onRetire={retireNow} />
+          <Header 
+            game={game} 
+            onReset={resetAll} 
+            onExport={exportSave} 
+            onImport={()=>setShowImport(true)} 
+            onRetire={retireNow}
+            onAppearanceChange={handleAppearanceChange}
+          />
           <Tabs current={tab} onSelect={setTab} tabs={["Home","Training","Health","Life","Social","Team","Contracts","Awards","History","Analytics","League"]} />
           
           {tab==="Home" && (
@@ -3023,21 +3021,6 @@ export default function BasketballLife(){
             </>
           )}
         </>
-=======
-      <Header 
-        game={game} 
-        onReset={resetAll} 
-        onExport={exportSave} 
-        onImport={()=>setShowImport(true)} 
-        onRetire={retireNow}
-        onAppearanceChange={handleAppearanceChange}
-      />
-
-      <Tabs current={tab} onSelect={setTab} tabs={["Home","Training","Health","Team","Contracts","Awards","History","Analytics","League"]} />
-
-      {tab==="Home" && (
-        <HomePanel game={game} avg={avg} onWeek={playNextWeek} onEvent={randomLifeEvent} onSocialMedia={postSocialMedia} onSimMonth={simMonth} onSimSeason={simSeason} />
->>>>>>> 6d13d4f45e9b02546bd927829a745d09c194e7ce
       )}
 
       {!game.retired && tab==="Training" && (
@@ -3129,30 +3112,6 @@ function Header({ game, onReset, onExport, onImport, onRetire, onAppearanceChang
   };
   
   return (
-<<<<<<< HEAD
-    <div className="header">
-      <div className="header-content">
-        <div className="player-info">
-          <ProfilePicture 
-            appearance={game.appearance} 
-            firstName={game.firstName} 
-            lastName={game.lastName} 
-            size={60} 
-          />
-          <div className="player-details">
-            <h1>{game.firstName} {game.lastName}</h1>
-            <div className="player-meta">
-              <span>{teamName}</span>
-              <span>#{game.jersey}</span>
-              <span>{game.archetype}</span>
-              <span>{game.ratings.overall} OVR</span>
-              <span>{formatMoney(game.cash)}</span>
-              {game.relationships?.girlfriend && (
-                <span style={{ color: 'var(--team-secondary)' }}>
-                  💕 {game.relationships.girlfriend.name}
-                </span>
-              )}
-=======
     <>
       <div className="header">
         <div className="header-content">
@@ -3194,15 +3153,19 @@ function Header({ game, onReset, onExport, onImport, onRetire, onAppearanceChang
               </div>
             </div>
             <div className="player-details">
-              <h1>{game.name}</h1>
+              <h1>{game.firstName} {game.lastName}</h1>
               <div className="player-meta">
                 <span>{teamName}</span>
                 <span>#{game.jersey}</span>
                 <span>{game.archetype}</span>
                 <span>{game.ratings.overall} OVR</span>
                 <span>{formatMoney(game.cash)}</span>
+                {game.relationships?.girlfriend && (
+                  <span style={{ color: 'var(--team-secondary)' }}>
+                    💕 {game.relationships.girlfriend.name}
+                  </span>
+                )}
               </div>
->>>>>>> 6d13d4f45e9b02546bd927829a745d09c194e7ce
             </div>
           </div>
           <div className="header-actions">
