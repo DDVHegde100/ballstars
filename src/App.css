@@ -508,7 +508,133 @@ h1 {
   background: linear-gradient(135deg, #10b981, #059669);
   border-color: rgba(16, 185, 129, 0.3);
   color: white;
+<<<<<<< HEAD
   font-weight: 600;
+=======
+}
+
+/* Team-specific button variant */
+.btn-team {
+  background: linear-gradient(135deg, var(--team-primary), var(--team-secondary));
+  border-color: rgba(var(--team-primary), 0.3);
+  color: white;
+}
+
+.btn-team-outline {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.btn-team-outline:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+/* Avatar and Profile Customization Styles */
+.avatar {
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.avatar:hover {
+  transform: scale(1.05);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+}
+
+.player-avatar {
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.player-avatar:hover {
+  transform: scale(1.02);
+}
+
+/* Profile Customization Modal */
+.profile-customizer {
+  backdrop-filter: blur(20px);
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.customization-option {
+  transition: all 0.2s ease;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.customization-option:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.customization-option.selected {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px var(--team-primary)44;
+}
+
+/* Hide scrollbar for customization panels */
+.customization-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.customization-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+/* Enhanced Button Variants */
+.btn-primary {
+  background: linear-gradient(135deg, var(--team-primary), var(--team-secondary));
+  border-color: var(--team-primary);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, var(--team-secondary), var(--team-primary));
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Small button variant */
+.btn-sm {
+  padding: 0.75rem 1.5rem;
+  font-size: 0.9rem;
+}
+
+/* Ghost button variant */
+.btn-ghost {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.btn-secondary:hover {
+  box-shadow: var(--shadow-xl), 0 0 30px rgba(107, 114, 128, 0.4);
+}
+
+.btn-success {
+  background: linear-gradient(135deg, var(--ui-success), #059669);
+  box-shadow: var(--shadow-lg), 0 0 20px rgba(16, 185, 129, 0.3);
+>>>>>>> 6d13d4f45e9b02546bd927829a745d09c194e7ce
 }
 
 .btn-success:hover {

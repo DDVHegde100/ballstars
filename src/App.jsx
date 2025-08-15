@@ -41,22 +41,269 @@ const formatMoney = (amount) => {
   }
 };
 
-// Generate random player appearance
+// Generate random player appearance with comprehensive customization
 const generateAppearance = () => {
-  const skinTones = ['#F5DEB3', '#DEB887', '#D2B48C', '#BC9A6A', '#A0522D', '#8B4513', '#654321'];
-  const hairColors = ['#000000', '#2F1B14', '#8B4513', '#D2691E', '#DAA520', '#FFD700', '#B22222', '#FFFFFF'];
-  const eyeColors = ['#8B4513', '#654321', '#4682B4', '#228B22', '#808080', '#000000'];
+  const skinTones = [
+    '#F5DEB3', '#DEB887', '#D2B48C', '#BC9A6A', 
+    '#A0522D', '#8B4513', '#654321', '#F4C2A1',
+    '#E6B887', '#C8956D', '#8D5524', '#5D4037'
+  ];
+  
+  const hairStyles = [
+    'buzz', 'short', 'medium', 'long', 'curly', 'afro', 
+    'fade', 'mohawk', 'bald', 'ponytail', 'dreadlocks', 'waves'
+  ];
+  
+  const hairColors = [
+    '#000000', '#2F1B14', '#8B4513', '#D2691E', 
+    '#DAA520', '#FFD700', '#B22222', '#FFFFFF', 
+    '#654321', '#4A4A4A', '#8B0000', '#2E2E2E'
+  ];
+  
+  const eyeColors = [
+    '#8B4513', '#654321', '#4682B4', '#228B22', 
+    '#808080', '#000000', '#32CD32', '#4169E1',
+    '#20B2AA', '#8A2BE2', '#A0522D', '#2E8B57'
+  ];
+  
+  const faceShapes = ['oval', 'round', 'square', 'heart', 'diamond', 'oblong'];
+  const noseTypes = ['small', 'medium', 'large', 'wide', 'narrow', 'button', 'hooked'];
+  const facialHairStyles = ['none', 'mustache', 'goatee', 'full_beard', 'stubble', 'soul_patch', 'mutton_chops'];
+  const expressions = ['neutral', 'smile', 'smirk', 'serious', 'confident', 'determined'];
   
   return {
     skin: pick(skinTones),
-    hair: pick(hairColors),
+    hairStyle: pick(hairStyles),
+    hairColor: pick(hairColors),
     eyes: pick(eyeColors),
-    features: {
-      faceShape: pick(['oval', 'round', 'square', 'heart']),
-      nose: pick(['small', 'medium', 'large']),
-      eyebrows: pick(['thin', 'medium', 'thick'])
+    faceShape: pick(faceShapes),
+    nose: pick(noseTypes),
+    facialHair: pick(facialHairStyles),
+    expression: pick(expressions),
+    eyebrows: pick(['thin', 'medium', 'thick', 'bushy']),
+    jawline: pick(['soft', 'defined', 'strong', 'rounded'])
+  };
+};
+
+// Create SVG avatar based on appearance
+const createAvatarSVG = (appearance, size = 120) => {
+  const { skin, hairStyle, hairColor, eyes, faceShape, nose, facialHair, expression, eyebrows, jawline } = appearance;
+  
+  // Face shape paths
+  const getFaceShape = (shape) => {
+    const baseWidth = size * 0.8;
+    const baseHeight = size * 0.9;
+    const centerX = size / 2;
+    const centerY = size / 2;
+    
+    switch (shape) {
+      case 'oval':
+        return `M ${centerX - baseWidth/2.5} ${centerY - baseHeight/2.5} 
+                Q ${centerX - baseWidth/2.5} ${centerY - baseHeight/2} ${centerX} ${centerY - baseHeight/2}
+                Q ${centerX + baseWidth/2.5} ${centerY - baseHeight/2} ${centerX + baseWidth/2.5} ${centerY - baseHeight/2.5}
+                Q ${centerX + baseWidth/2.5} ${centerY + baseHeight/2.5} ${centerX} ${centerY + baseHeight/2}
+                Q ${centerX - baseWidth/2.5} ${centerY + baseHeight/2.5} ${centerX - baseWidth/2.5} ${centerY - baseHeight/2.5} Z`;
+      case 'round':
+        return `M ${centerX} ${centerY - baseHeight/2.2} 
+                A ${baseWidth/2.2} ${baseHeight/2.2} 0 1 1 ${centerX} ${centerY + baseHeight/2.2}
+                A ${baseWidth/2.2} ${baseHeight/2.2} 0 1 1 ${centerX} ${centerY - baseHeight/2.2} Z`;
+      case 'square':
+        return `M ${centerX - baseWidth/2.5} ${centerY - baseHeight/2.5}
+                L ${centerX + baseWidth/2.5} ${centerY - baseHeight/2.5}
+                Q ${centerX + baseWidth/2.3} ${centerY + baseHeight/2.5} ${centerX} ${centerY + baseHeight/2}
+                Q ${centerX - baseWidth/2.3} ${centerY + baseHeight/2.5} ${centerX - baseWidth/2.5} ${centerY - baseHeight/2.5} Z`;
+      case 'heart':
+        return `M ${centerX} ${centerY + baseHeight/2.2}
+                Q ${centerX - baseWidth/2.5} ${centerY + baseHeight/3} ${centerX - baseWidth/2.5} ${centerY - baseHeight/4}
+                Q ${centerX - baseWidth/2.5} ${centerY - baseHeight/2} ${centerX} ${centerY - baseHeight/2.5}
+                Q ${centerX + baseWidth/2.5} ${centerY - baseHeight/2} ${centerX + baseWidth/2.5} ${centerY - baseHeight/4}
+                Q ${centerX + baseWidth/2.5} ${centerY + baseHeight/3} ${centerX} ${centerY + baseHeight/2.2} Z`;
+      default:
+        return getFaceShape('oval');
     }
   };
+  
+  // Hair style paths
+  const getHairStyle = (style, color) => {
+    const centerX = size / 2;
+    const hairTop = size * 0.05;
+    const hairWidth = size * 0.85;
+    
+    if (style === 'bald') return '';
+    
+    const hairPath = (() => {
+      switch (style) {
+        case 'buzz':
+          return `M ${centerX - hairWidth/3} ${hairTop + 10} 
+                  Q ${centerX} ${hairTop} ${centerX + hairWidth/3} ${hairTop + 10}
+                  L ${centerX + hairWidth/2.5} ${hairTop + 25}
+                  Q ${centerX} ${hairTop + 15} ${centerX - hairWidth/2.5} ${hairTop + 25} Z`;
+        case 'short':
+          return `M ${centerX - hairWidth/2.5} ${hairTop + 8} 
+                  Q ${centerX} ${hairTop - 5} ${centerX + hairWidth/2.5} ${hairTop + 8}
+                  L ${centerX + hairWidth/2.5} ${hairTop + 35}
+                  Q ${centerX} ${hairTop + 20} ${centerX - hairWidth/2.5} ${hairTop + 35} Z`;
+        case 'afro':
+          return `M ${centerX} ${hairTop - 10} 
+                  A ${hairWidth/1.8} ${hairWidth/2.2} 0 1 1 ${centerX + 0.1} ${hairTop - 10} Z`;
+        case 'curly':
+          return `M ${centerX - hairWidth/2.3} ${hairTop} 
+                  Q ${centerX - hairWidth/3} ${hairTop - 15} ${centerX} ${hairTop - 8}
+                  Q ${centerX + hairWidth/3} ${hairTop - 15} ${centerX + hairWidth/2.3} ${hairTop}
+                  L ${centerX + hairWidth/2.5} ${hairTop + 40}
+                  Q ${centerX} ${hairTop + 25} ${centerX - hairWidth/2.5} ${hairTop + 40} Z`;
+        case 'fade':
+          return `M ${centerX - hairWidth/2.8} ${hairTop + 12} 
+                  Q ${centerX} ${hairTop - 2} ${centerX + hairWidth/2.8} ${hairTop + 12}
+                  L ${centerX + hairWidth/3} ${hairTop + 30}
+                  Q ${centerX} ${hairTop + 18} ${centerX - hairWidth/3} ${hairTop + 30} Z`;
+        default:
+          return getHairStyle('short', color);
+      }
+    })();
+    
+    return `<path d="${hairPath}" fill="${color}" stroke="${color}" stroke-width="1"/>`;
+  };
+  
+  // Eye generation
+  const getEyes = (eyeColor, expression) => {
+    const leftEyeX = size * 0.35;
+    const rightEyeX = size * 0.65;
+    const eyeY = size * 0.4;
+    const eyeWidth = 12;
+    const eyeHeight = expression === 'smile' ? 8 : 10;
+    
+    return `
+      <ellipse cx="${leftEyeX}" cy="${eyeY}" rx="${eyeWidth}" ry="${eyeHeight}" fill="white" stroke="#333" stroke-width="1"/>
+      <circle cx="${leftEyeX}" cy="${eyeY}" r="6" fill="${eyeColor}"/>
+      <circle cx="${leftEyeX + 2}" cy="${eyeY - 1}" r="2" fill="black"/>
+      <circle cx="${leftEyeX + 3}" cy="${eyeY - 2}" r="1" fill="white"/>
+      
+      <ellipse cx="${rightEyeX}" cy="${eyeY}" rx="${eyeWidth}" ry="${eyeHeight}" fill="white" stroke="#333" stroke-width="1"/>
+      <circle cx="${rightEyeX}" cy="${eyeY}" r="6" fill="${eyeColor}"/>
+      <circle cx="${rightEyeX + 2}" cy="${eyeY - 1}" r="2" fill="black"/>
+      <circle cx="${rightEyeX + 3}" cy="${eyeY - 2}" r="1" fill="white"/>
+    `;
+  };
+  
+  // Eyebrow generation
+  const getEyebrows = (type, hairColor) => {
+    const leftBrowX = size * 0.35;
+    const rightBrowX = size * 0.65;
+    const browY = size * 0.32;
+    
+    const thickness = type === 'thick' ? 4 : type === 'medium' ? 3 : 2;
+    const length = type === 'bushy' ? 18 : 15;
+    
+    return `
+      <path d="M ${leftBrowX - length/2} ${browY} Q ${leftBrowX} ${browY - 3} ${leftBrowX + length/2} ${browY}" 
+            stroke="${hairColor}" stroke-width="${thickness}" fill="none" stroke-linecap="round"/>
+      <path d="M ${rightBrowX - length/2} ${browY} Q ${rightBrowX} ${browY - 3} ${rightBrowX + length/2} ${browY}" 
+            stroke="${hairColor}" stroke-width="${thickness}" fill="none" stroke-linecap="round"/>
+    `;
+  };
+  
+  // Nose generation
+  const getNose = (type, skinColor) => {
+    const noseX = size / 2;
+    const noseY = size * 0.5;
+    
+    switch (type) {
+      case 'small':
+        return `<ellipse cx="${noseX}" cy="${noseY}" rx="3" ry="6" fill="${skinColor}" stroke="#999" stroke-width="0.5"/>`;
+      case 'large':
+        return `<ellipse cx="${noseX}" cy="${noseY}" rx="8" ry="12" fill="${skinColor}" stroke="#999" stroke-width="1"/>`;
+      case 'wide':
+        return `<ellipse cx="${noseX}" cy="${noseY}" rx="10" ry="8" fill="${skinColor}" stroke="#999" stroke-width="1"/>`;
+      case 'button':
+        return `<circle cx="${noseX}" cy="${noseY}" r="5" fill="${skinColor}" stroke="#999" stroke-width="0.5"/>`;
+      default:
+        return `<ellipse cx="${noseX}" cy="${noseY}" rx="5" ry="8" fill="${skinColor}" stroke="#999" stroke-width="0.8"/>`;
+    }
+  };
+  
+  // Mouth/Expression generation
+  const getMouth = (expression, skinColor) => {
+    const mouthX = size / 2;
+    const mouthY = size * 0.65;
+    
+    switch (expression) {
+      case 'smile':
+        return `<path d="M ${mouthX - 15} ${mouthY} Q ${mouthX} ${mouthY + 8} ${mouthX + 15} ${mouthY}" 
+                stroke="#D4696B" stroke-width="3" fill="none" stroke-linecap="round"/>`;
+      case 'smirk':
+        return `<path d="M ${mouthX - 12} ${mouthY} Q ${mouthX + 5} ${mouthY + 4} ${mouthX + 15} ${mouthY - 2}" 
+                stroke="#D4696B" stroke-width="2" fill="none" stroke-linecap="round"/>`;
+      case 'serious':
+        return `<line x1="${mouthX - 12}" y1="${mouthY}" x2="${mouthX + 12}" y2="${mouthY}" 
+                stroke="#D4696B" stroke-width="3" stroke-linecap="round"/>`;
+      default:
+        return `<path d="M ${mouthX - 10} ${mouthY} Q ${mouthX} ${mouthY + 2} ${mouthX + 10} ${mouthY}" 
+                stroke="#D4696B" stroke-width="2" fill="none" stroke-linecap="round"/>`;
+    }
+  };
+  
+  // Facial hair generation
+  const getFacialHair = (style, hairColor) => {
+    const centerX = size / 2;
+    const chinY = size * 0.8;
+    
+    if (style === 'none') return '';
+    
+    switch (style) {
+      case 'mustache':
+        return `<path d="M ${centerX - 15} ${size * 0.6} Q ${centerX} ${size * 0.58} ${centerX + 15} ${size * 0.6}" 
+                stroke="${hairColor}" stroke-width="4" fill="none" stroke-linecap="round"/>`;
+      case 'goatee':
+        return `<ellipse cx="${centerX}" cy="${chinY - 5}" rx="8" ry="12" fill="${hairColor}"/>`;
+      case 'full_beard':
+        return `<path d="M ${centerX - 25} ${size * 0.6} 
+                Q ${centerX - 30} ${chinY} ${centerX} ${chinY + 5}
+                Q ${centerX + 30} ${chinY} ${centerX + 25} ${size * 0.6}" 
+                fill="${hairColor}"/>`;
+      case 'stubble':
+        return `<circle cx="${centerX - 10}" cy="${chinY - 8}" r="1" fill="${hairColor}" opacity="0.6"/>
+                <circle cx="${centerX - 5}" cy="${chinY - 5}" r="1" fill="${hairColor}" opacity="0.6"/>
+                <circle cx="${centerX}" cy="${chinY - 3}" r="1" fill="${hairColor}" opacity="0.6"/>
+                <circle cx="${centerX + 5}" cy="${chinY - 5}" r="1" fill="${hairColor}" opacity="0.6"/>
+                <circle cx="${centerX + 10}" cy="${chinY - 8}" r="1" fill="${hairColor}" opacity="0.6"/>`;
+      default:
+        return '';
+    }
+  };
+  
+  const facePath = getFaceShape(faceShape);
+  const hairSVG = getHairStyle(hairStyle, hairColor);
+  const eyesSVG = getEyes(eyes, expression);
+  const eyebrowsSVG = getEyebrows(eyebrows, hairColor);
+  const noseSVG = getNose(nose, skin);
+  const mouthSVG = getMouth(expression, skin);
+  const facialHairSVG = getFacialHair(facialHair, hairColor);
+  
+  return `
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+      <!-- Face -->
+      <path d="${facePath}" fill="${skin}" stroke="#999" stroke-width="1"/>
+      
+      <!-- Hair -->
+      ${hairSVG}
+      
+      <!-- Eyebrows -->
+      ${eyebrowsSVG}
+      
+      <!-- Eyes -->
+      ${eyesSVG}
+      
+      <!-- Nose -->
+      ${noseSVG}
+      
+      <!-- Mouth -->
+      ${mouthSVG}
+      
+      <!-- Facial Hair -->
+      ${facialHairSVG}
+    </svg>
+  `;
 };
 
 // Convert hex color to RGB values for glassmorphism effects
@@ -668,11 +915,19 @@ function newPlayer(custom){
   const arch = custom?.archetype || pickArchetype();
   const ratings = baseRatings(arch);
   const rookie = rookieContract(ratings.overall);
+<<<<<<< HEAD
   const appearance = generateAppearance();
   
   return {
     firstName, lastName, age, archetype: arch, ratings, potential: clamp(ratings.overall + irnd(4,15), 70, 99),
     appearance, // New player appearance
+=======
+  const appearance = custom?.appearance || generateAppearance();
+  
+  return {
+    name, age, archetype: arch, ratings, potential: clamp(ratings.overall + irnd(4,15), 70, 99),
+    appearance,
+>>>>>>> 6d13d4f45e9b02546bd927829a745d09c194e7ce
     morale: 70, health: 100, peak: 90, fame: 5, followers: irnd(1000, 5000), cash: 50, 
     endorsements: [], shoeDeals: [], premiumServices: [],
     // New life features
@@ -1371,6 +1626,15 @@ export default function BasketballLife(){
   }, [game?.team]);
 
   function resetAll(){ setGame(newPlayer()); setTab("Home"); pushToast("New career started!"); }
+  
+  // Handle avatar appearance changes
+  function handleAppearanceChange(newAppearance) {
+    setGame(prev => ({
+      ...prev,
+      appearance: newAppearance
+    }));
+    pushToast("Avatar updated!");
+  }
 
   function pushToast(t){ setToast({ id: cryptoRandomId(), text: t}); setTimeout(()=>setToast(null), 2200); }
   
@@ -2702,6 +2966,7 @@ export default function BasketballLife(){
 
   return (
     <div className="fade-in">
+<<<<<<< HEAD
       {!game.retired ? (
         <>
           <Header game={game} onReset={resetAll} onExport={exportSave} onImport={()=>setShowImport(true)} onRetire={retireNow} />
@@ -2758,6 +3023,21 @@ export default function BasketballLife(){
             </>
           )}
         </>
+=======
+      <Header 
+        game={game} 
+        onReset={resetAll} 
+        onExport={exportSave} 
+        onImport={()=>setShowImport(true)} 
+        onRetire={retireNow}
+        onAppearanceChange={handleAppearanceChange}
+      />
+
+      <Tabs current={tab} onSelect={setTab} tabs={["Home","Training","Health","Team","Contracts","Awards","History","Analytics","League"]} />
+
+      {tab==="Home" && (
+        <HomePanel game={game} avg={avg} onWeek={playNextWeek} onEvent={randomLifeEvent} onSocialMedia={postSocialMedia} onSimMonth={simMonth} onSimSeason={simSeason} />
+>>>>>>> 6d13d4f45e9b02546bd927829a745d09c194e7ce
       )}
 
       {!game.retired && tab==="Training" && (
@@ -2839,11 +3119,17 @@ export default function BasketballLife(){
 
 // Simple profile picture component
 // ---------- Subcomponents ----------
-function Header({ game, onReset, onExport, onImport, onRetire }){
+function Header({ game, onReset, onExport, onImport, onRetire, onAppearanceChange }){
+  const [showProfileChanger, setShowProfileChanger] = useState(false);
   const teamInfo = NBA_TEAMS[game.team];
   const teamName = teamInfo ? teamInfo.name : game.team;
   
+  const handleAppearanceChange = (newAppearance) => {
+    onAppearanceChange(newAppearance);
+  };
+  
   return (
+<<<<<<< HEAD
     <div className="header">
       <div className="header-content">
         <div className="player-info">
@@ -2866,17 +3152,76 @@ function Header({ game, onReset, onExport, onImport, onRetire }){
                   💕 {game.relationships.girlfriend.name}
                 </span>
               )}
+=======
+    <>
+      <div className="header">
+        <div className="header-content">
+          <div className="player-info">
+            <div 
+              className="player-avatar" 
+              onClick={() => setShowProfileChanger(true)}
+              style={{ 
+                cursor: 'pointer',
+                position: 'relative',
+                padding: 0,
+                borderRadius: '50%',
+                overflow: 'visible'
+              }}
+              title="Click to customize avatar"
+            >
+              <Avatar 
+                appearance={game.appearance || generateAppearance()} 
+                size={64} 
+              />
+              <div style={{
+                position: 'absolute',
+                bottom: -2,
+                right: -2,
+                width: '20px',
+                height: '20px',
+                borderRadius: '50%',
+                background: 'var(--team-primary)',
+                color: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '10px',
+                fontWeight: 'bold',
+                border: '2px solid rgba(255, 255, 255, 0.9)',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)'
+              }}>
+                ✏️
+              </div>
+            </div>
+            <div className="player-details">
+              <h1>{game.name}</h1>
+              <div className="player-meta">
+                <span>{teamName}</span>
+                <span>#{game.jersey}</span>
+                <span>{game.archetype}</span>
+                <span>{game.ratings.overall} OVR</span>
+                <span>{formatMoney(game.cash)}</span>
+              </div>
+>>>>>>> 6d13d4f45e9b02546bd927829a745d09c194e7ce
             </div>
           </div>
-        </div>
-        <div className="header-actions">
-          <button className="btn btn-secondary btn-sm" onClick={onExport}>Export</button>
-          <button className="btn btn-secondary btn-sm" onClick={onImport}>Import</button>
-          <button className="btn btn-ghost btn-sm" onClick={onReset}>New Career</button>
-          {!game.retired && <button className="btn btn-sm" style={{background: '#dc2626', color: 'white'}} onClick={onRetire}>Retire</button>}
+          <div className="header-actions">
+            <button className="btn btn-secondary btn-sm" onClick={onExport}>Export</button>
+            <button className="btn btn-secondary btn-sm" onClick={onImport}>Import</button>
+            <button className="btn btn-ghost btn-sm" onClick={onReset}>New Career</button>
+            {!game.retired && <button className="btn btn-sm" style={{background: '#dc2626', color: 'white'}} onClick={onRetire}>Retire</button>}
+          </div>
         </div>
       </div>
-    </div>
+      
+      {showProfileChanger && (
+        <ProfilePictureChanger
+          currentAppearance={game.appearance || generateAppearance()}
+          onAppearanceChange={handleAppearanceChange}
+          onClose={() => setShowProfileChanger(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -3662,254 +4007,558 @@ function TeamPanel({ game, avg, onTrade, onContract }){
 function AnalyticsPanel({ game }){
   const seasons = game.career?.seasons || [];
   const careerPPG = seasons.map(s => s.averages?.pts || 0);
+  const careerRPG = seasons.map(s => s.averages?.reb || 0);
+  const careerAPG = seasons.map(s => s.averages?.ast || 0);
   const careerPER = seasons.map(s => s.averages?.per || 0);
   const careerTS = seasons.map(s => s.averages?.ts || 0);
+  const careerWS = seasons.map(s => s.averages?.winShares || (s.averages?.pts || 0) * 0.1);
+  const careerVORP = seasons.map(s => s.averages?.vorp || (s.averages?.per || 0) * 0.5 - 5);
   
-  // Format ranking display for better UX with legacy score consideration
-  const formatRanking = (rank, legacyScore = 0) => {
-    if (rank === "N/A" || rank <= 10) return `#${rank}`;
+  // Enhanced Legacy Score Calculation with more award factors
+  const calculateEnhancedLegacyScore = (player) => {
+    const totals = player.career?.totals || {};
+    const stats = player.career?.stats || {};
     
-    // Use legacy score to determine appropriate ranking display
-    if (legacyScore >= 800) {
-      if (rank <= 15) return "Top 15";
-      if (rank <= 25) return "Top 25";
-    } else if (legacyScore >= 600) {
-      if (rank <= 25) return "Top 25";
-      if (rank <= 50) return "Top 50";
-    } else if (legacyScore >= 400) {
-      if (rank <= 50) return "Top 50";
-      if (rank <= 100) return "Top 100";
-    } else if (legacyScore >= 200) {
-      if (rank <= 100) return "Top 100";
-      if (rank <= 200) return "Top 200";
-    } else {
-      if (rank <= 200) return "Top 200";
-      if (rank <= 300) return "Top 300";
-      if (rank <= 400) return "Top 400";
-      if (rank <= 500) return "Top 500";
+    // Base statistical score (0-300 points)
+    const careerPPG = stats.ppg || 0;
+    const careerRPG = stats.rpg || 0;
+    const careerAPG = stats.apg || 0;
+    const careerPER = stats.per || 0;
+    const careerTS = stats.ts || 0;
+    const gamesPlayed = totals.games || 0;
+    
+    let baseScore = 0;
+    baseScore += Math.min(careerPPG * 8, 200); // Max 200 for scoring
+    baseScore += Math.min(careerRPG * 6, 60); // Max 60 for rebounding
+    baseScore += Math.min(careerAPG * 8, 80); // Max 80 for assists
+    baseScore += Math.min((careerPER - 15) * 10, 100); // Max 100 for efficiency
+    baseScore += Math.min(careerTS * 200, 100); // Max 100 for shooting
+    baseScore += Math.min(gamesPlayed / 82 * 10, 150); // Max 150 for longevity
+    
+    // Major Awards (0-400 points)
+    let awardScore = 0;
+    awardScore += (totals.titles || 0) * 60; // Championships: 60 pts each
+    awardScore += (totals.mvps || 0) * 80; // MVP: 80 pts each
+    awardScore += (totals.finalsMvps || 0) * 50; // Finals MVP: 50 pts each
+    awardScore += (totals.dpoys || 0) * 30; // DPOY: 30 pts each
+    awardScore += (totals.sixthMans || 0) * 15; // 6MOY: 15 pts each
+    awardScore += (totals.roys || 0) * 25; // ROY: 25 pts each
+    awardScore += (totals.mips || 0) * 20; // MIP: 20 pts each
+    
+    // All-Star and honors (0-200 points)
+    let honorScore = 0;
+    honorScore += (totals.allStars || 0) * 8; // All-Star: 8 pts each
+    honorScore += (totals.allNBAs || 0) * 12; // All-NBA: 12 pts each
+    honorScore += (totals.allDefenses || 0) * 10; // All-Defense: 10 pts each
+    honorScore += (totals.scoringTitles || 0) * 15; // Scoring titles: 15 pts each
+    honorScore += (totals.reboundingTitles || 0) * 12; // Rebounding titles: 12 pts each
+    honorScore += (totals.assistTitles || 0) * 12; // Assist titles: 12 pts each
+    
+    // Peak performance bonus (0-100 points)
+    let peakScore = 0;
+    const bestSeason = seasons.reduce((best, season) => {
+      const seasonScore = (season.averages?.pts || 0) + (season.averages?.reb || 0) + (season.averages?.ast || 0);
+      return seasonScore > best.score ? { score: seasonScore, season } : best;
+    }, { score: 0, season: null });
+    
+    if (bestSeason.season) {
+      peakScore += Math.min(bestSeason.score * 2, 100);
     }
     
-    return "Unranked";
+    return Math.round(Math.max(0, baseScore + awardScore + honorScore + peakScore));
   };
   
-  // Calculate analytics data safely
-  const playerScore = calculatePlayerScore(game);
+  // Enhanced ranking designation system
+  const getPrestigiousDesignation = (rank, legacyScore) => {
+    if (rank <= 1) return { title: "GOAT", color: "#FFD700", tier: "Legendary" };
+    if (rank <= 3) return { title: "Top 3 All-Time", color: "#FFD700", tier: "Legendary" };
+    if (rank <= 5) return { title: "Top 5 All-Time", color: "#C0C0C0", tier: "Legendary" };
+    if (rank <= 10) return { title: `#${rank} All-Time`, color: "#CD7F32", tier: "Elite" };
+    if (rank <= 15) return { title: "Top 15", color: "#8A2BE2", tier: "Elite" };
+    if (rank <= 25) return { title: "Top 25", color: "#FF6347", tier: "Elite" };
+    if (rank <= 50) return { title: "Top 50", color: "#32CD32", tier: "Great" };
+    if (rank <= 100) return { title: "Top 100", color: "#1E90FF", tier: "Great" };
+    if (rank <= 200) return { title: "Top 200", color: "#9370DB", tier: "Very Good" };
+    if (rank <= 300) return { title: "Top 300", color: "#20B2AA", tier: "Good" };
+    if (rank <= 400) return { title: "Top 400", color: "#FFA500", tier: "Solid" };
+    if (rank <= 500) return { title: "Top 500", color: "#DC143C", tier: "Respectable" };
+    return { title: "Unranked", color: "#696969", tier: "Developing" };
+  };
+  
+  // Calculate enhanced analytics
+  const playerScore = calculateEnhancedLegacyScore(game);
   const hofChance = getHallOfFameChance(game);
   const currentRankings = generateCurrentLeagueRankings(game);
   const allTimeRankings = generateAllTimeRankings(game);
   
   const playerCurrentRank = currentRankings.find(p => p.isPlayer)?.rank || "N/A";
-  const playerAllTimeRank = allTimeRankings.find(p => p.isPlayer)?.rank || "N/A";
-  const formattedAllTimeRank = formatRanking(playerAllTimeRank, playerScore);
+  const playerAllTimeRank = allTimeRankings.find(p => p.isPlayer)?.rank || 999;
+  const designation = getPrestigiousDesignation(playerAllTimeRank, playerScore);
   
-  // Safely get awards data from totals
-  const totals = game.career?.totals || {};
-  const championships = totals.titles || 0;
-  const mvpAwards = totals.mvps || 0;
+  // Generate MVP winners during player's career
+  const generateMVPHistory = () => {
+    const mvpWinners = [];
+    seasons.forEach((season, index) => {
+      if (season.stats?.mvp) {
+        mvpWinners.push({
+          season: season.season,
+          playerName: game.name,
+          stats: `${fmt(season.averages?.pts || 0)}/${fmt(season.averages?.reb || 0)}/${fmt(season.averages?.ast || 0)}`,
+          team: season.team,
+          isPlayer: true
+        });
+      } else {
+        // Generate random MVP winner for that season
+        const mvpNames = ["LeBron James", "Stephen Curry", "Giannis Antetokounmpo", "Nikola Jokic", "Joel Embiid", "Luka Doncic", "Jayson Tatum", "Kevin Durant"];
+        mvpWinners.push({
+          season: season.season,
+          playerName: pick(mvpNames),
+          stats: `${irnd(25, 35)}/${irnd(8, 15)}/${irnd(6, 12)}`,
+          team: pick(Object.keys(NBA_TEAMS)),
+          isPlayer: false
+        });
+      }
+    });
+    return mvpWinners.slice(-10); // Last 10 seasons
+  };
   
+  const mvpHistory = generateMVPHistory();
+  
+  // Career trajectory data points
+  const trajectoryData = seasons.map((season, index) => ({
+    season: season.season,
+    overallRating: season.overall || 70,
+    ppg: season.averages?.pts || 0,
+    per: season.averages?.per || 0,
+    winShares: season.averages?.winShares || 0,
+    vorp: season.averages?.vorp || 0,
+    age: (game.age || 20) - seasons.length + index + 1
+  }));
+
   return (
-    <div className="grid-3">
-      {/* Hall of Fame & Legacy */}
-      <div className="panel panel-content-tight">
-        <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>Hall of Fame Analysis</h3>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '20px' }}>
+      
+      {/* Enhanced Legacy & Designation */}
+      <div className="panel">
+        <h3 style={{marginBottom: '16px', color: 'var(--team-primary)', textAlign: 'center'}}>Legacy Analysis</h3>
         
         {seasons.length > 0 ? (
-          <div style={{gap: '12px', display: 'flex', flexDirection: 'column'}}>
-            {/* Legacy Score */}
+          <div style={{gap: '16px', display: 'flex', flexDirection: 'column'}}>
+            {/* Prestigious Designation */}
             <div style={{
-              background: 'linear-gradient(135deg, var(--team-primary), var(--team-secondary))',
-              borderRadius: '12px',
-              padding: '12px',
-              textAlign: 'center',
-              marginBottom: '8px'
+              background: `linear-gradient(135deg, ${designation.color}22, ${designation.color}11)`,
+              border: `2px solid ${designation.color}44`,
+              borderRadius: '16px',
+              padding: '16px',
+              textAlign: 'center'
             }}>
-              <div style={{fontSize: '10px', color: 'var(--team-text)', opacity: '0.9', fontWeight: '600'}}>LEGACY SCORE</div>
-              <div style={{fontSize: '24px', fontWeight: 'bold', color: 'var(--team-text)'}}>{playerScore}</div>
-              <div style={{fontSize: '11px', color: 'var(--team-text)', opacity: '0.8'}}>
-                Career Impact Rating
+              <div style={{fontSize: '11px', color: designation.color, opacity: '0.9', fontWeight: '700', letterSpacing: '1px'}}>
+                {designation.tier.toUpperCase()} TIER
+              </div>
+              <div style={{fontSize: '28px', fontWeight: 'bold', color: designation.color, margin: '8px 0'}}>
+                {designation.title}
+              </div>
+              <div style={{fontSize: '13px', color: 'var(--text-secondary)', opacity: '0.9'}}>
+                NBA All-Time Ranking
               </div>
             </div>
             
-            {/* Hall of Fame Probability */}
+            {/* Enhanced Legacy Score */}
             <div style={{
-              background: hofChance >= 60 ? 'linear-gradient(135deg, #10b981, #059669)' : 
-                          hofChance >= 30 ? 'linear-gradient(135deg, #f59e0b, #d97706)' :
-                          'linear-gradient(135deg, #6b7280, #4b5563)',
-              borderRadius: '12px',
-              padding: '12px',
+              background: 'linear-gradient(135deg, var(--team-primary), var(--team-secondary))',
+              borderRadius: '16px',
+              padding: '16px',
               textAlign: 'center'
             }}>
-              <div style={{fontSize: '11px', color: 'white', opacity: '0.9', fontWeight: '600', marginBottom: '4px'}}>
+              <div style={{fontSize: '12px', color: 'white', opacity: '0.9', fontWeight: '600', letterSpacing: '1px'}}>
+                ENHANCED LEGACY SCORE
+              </div>
+              <div style={{fontSize: '36px', fontWeight: 'bold', color: 'white', margin: '8px 0'}}>
+                {playerScore}
+              </div>
+              <div style={{fontSize: '11px', color: 'white', opacity: '0.8'}}>
+                Career Impact Rating • Max: 1000
+              </div>
+            </div>
+            
+            {/* Hall of Fame Analysis */}
+            <div style={{
+              background: hofChance >= 80 ? 'linear-gradient(135deg, #FFD700, #FFA500)' :
+                          hofChance >= 60 ? 'linear-gradient(135deg, #10b981, #059669)' : 
+                          hofChance >= 30 ? 'linear-gradient(135deg, #f59e0b, #d97706)' :
+                          'linear-gradient(135deg, #6b7280, #4b5563)',
+              borderRadius: '16px',
+              padding: '16px',
+              textAlign: 'center'
+            }}>
+              <div style={{fontSize: '12px', color: 'white', opacity: '0.9', fontWeight: '600', letterSpacing: '1px'}}>
                 HALL OF FAME PROBABILITY
               </div>
-              <div style={{fontSize: '24px', fontWeight: 'bold', color: 'white'}}>{hofChance}%</div>
-              <div style={{fontSize: '10px', color: 'white', opacity: '0.8', marginTop: '2px'}}>
-                {hofChance >= 80 ? "Lock for HOF" :
-                 hofChance >= 60 ? "Strong Candidate" :
-                 hofChance >= 30 ? "Building Legacy" :
-                 "Work in Progress"}
+              <div style={{fontSize: '36px', fontWeight: 'bold', color: 'white', margin: '8px 0'}}>
+                {hofChance}%
+              </div>
+              <div style={{fontSize: '12px', color: 'white', opacity: '0.8'}}>
+                {hofChance >= 80 ? "🔒 LOCK FOR HALL OF FAME" :
+                 hofChance >= 60 ? "⭐ STRONG CANDIDATE" :
+                 hofChance >= 30 ? "📈 BUILDING LEGACY" :
+                 "🔨 WORK IN PROGRESS"}
               </div>
             </div>
 
-            {/* Legacy Score */}
-            <div className="stats-grid">
+            {/* Career Achievement Summary */}
+            <div className="stats-grid" style={{gridTemplateColumns: 'repeat(2, 1fr)'}}>
               <div className="compact-stat">
-                <div className="compact-stat-label">Legacy Score</div>
-                <div className="compact-stat-value">{playerScore}</div>
-              </div>
-              <div className="compact-stat">
-                <div className="compact-stat-label">Career Seasons</div>
+                <div className="compact-stat-label">Seasons Played</div>
                 <div className="compact-stat-value">{seasons.length}</div>
               </div>
               <div className="compact-stat">
                 <div className="compact-stat-label">Championships</div>
-                <div className="compact-stat-value">{championships}</div>
+                <div className="compact-stat-value">{game.career?.totals?.titles || 0}</div>
               </div>
               <div className="compact-stat">
                 <div className="compact-stat-label">MVP Awards</div>
-                <div className="compact-stat-value">{mvpAwards}</div>
+                <div className="compact-stat-value">{game.career?.totals?.mvps || 0}</div>
+              </div>
+              <div className="compact-stat">
+                <div className="compact-stat-label">All-Star Games</div>
+                <div className="compact-stat-value">{game.career?.totals?.allStars || 0}</div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{color: 'var(--text-muted)', textAlign: 'center', padding: '40px', fontSize: '14px'}}>
+            Complete your first season to unlock legacy analysis
+          </div>
+        )}
+      </div>
+
+      {/* Career Trajectory Charts */}
+      <div className="panel">
+        <h3 style={{marginBottom: '16px', color: 'var(--team-primary)'}}>Career Trajectory</h3>
+        
+        {trajectoryData.length > 0 ? (
+          <div style={{gap: '20px', display: 'flex', flexDirection: 'column'}}>
+            {/* PPG Progression Chart */}
+            <div>
+              <div style={{fontSize: '13px', fontWeight: '600', marginBottom: '8px', color: 'var(--text-secondary)'}}>
+                Points Per Game Progression
+              </div>
+              <div style={{
+                height: '60px',
+                background: 'var(--bg-secondary)',
+                borderRadius: '8px',
+                padding: '8px',
+                display: 'flex',
+                alignItems: 'end',
+                gap: '2px'
+              }}>
+                {trajectoryData.map((data, index) => (
+                  <div key={index} style={{
+                    flex: 1,
+                    background: 'linear-gradient(to top, var(--team-primary), var(--team-secondary))',
+                    height: `${(data.ppg / Math.max(...careerPPG, 1)) * 100}%`,
+                    borderRadius: '2px',
+                    minHeight: '4px',
+                    position: 'relative'
+                  }} title={`Season ${data.season}: ${fmt(data.ppg)} PPG`} />
+                ))}
+              </div>
+              <div style={{fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px'}}>
+                Current: {fmt(careerPPG[careerPPG.length - 1] || 0)} PPG • Peak: {fmt(Math.max(...careerPPG, 0))} PPG
               </div>
             </div>
 
-            {/* HOF Requirements */}
-            <div style={{
-              background: 'var(--bg-secondary)',
-              borderRadius: '8px',
-              padding: '8px',
-              fontSize: '10px',
-              color: 'var(--text-secondary)'
-            }}>
-              <div style={{fontWeight: '600', marginBottom: '4px'}}>HOF Factors:</div>
-              <div>• Career Stats & Efficiency</div>
-              <div>• Championships & Finals MVPs</div>
-              <div>• Individual Awards (MVP, All-Star)</div>
-              <div>• Career Longevity</div>
+            {/* PER Progression Chart */}
+            <div>
+              <div style={{fontSize: '13px', fontWeight: '600', marginBottom: '8px', color: 'var(--text-secondary)'}}>
+                Player Efficiency Rating (PER)
+              </div>
+              <div style={{
+                height: '60px',
+                background: 'var(--bg-secondary)',
+                borderRadius: '8px',
+                padding: '8px',
+                display: 'flex',
+                alignItems: 'end',
+                gap: '2px'
+              }}>
+                {trajectoryData.map((data, index) => (
+                  <div key={index} style={{
+                    flex: 1,
+                    background: data.per >= 20 ? 'linear-gradient(to top, #10b981, #059669)' :
+                               data.per >= 15 ? 'linear-gradient(to top, #f59e0b, #d97706)' :
+                               'linear-gradient(to top, #6b7280, #4b5563)',
+                    height: `${Math.min((data.per / 30) * 100, 100)}%`,
+                    borderRadius: '2px',
+                    minHeight: '4px'
+                  }} title={`Season ${data.season}: ${fmt(data.per)} PER`} />
+                ))}
+              </div>
+              <div style={{fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px'}}>
+                Current: {fmt(careerPER[careerPER.length - 1] || 0)} • League Avg: 15.0 • Elite: 20+
+              </div>
+            </div>
+
+            {/* Overall Rating Progression */}
+            <div>
+              <div style={{fontSize: '13px', fontWeight: '600', marginBottom: '8px', color: 'var(--text-secondary)'}}>
+                Overall Rating Development
+              </div>
+              <div style={{
+                height: '60px',
+                background: 'var(--bg-secondary)',
+                borderRadius: '8px',
+                padding: '8px',
+                display: 'flex',
+                alignItems: 'end',
+                gap: '2px'
+              }}>
+                {trajectoryData.map((data, index) => (
+                  <div key={index} style={{
+                    flex: 1,
+                    background: data.overallRating >= 90 ? 'linear-gradient(to top, #FFD700, #FFA500)' :
+                               data.overallRating >= 85 ? 'linear-gradient(to top, #C0C0C0, #A9A9A9)' :
+                               data.overallRating >= 80 ? 'linear-gradient(to top, #CD7F32, #B8860B)' :
+                               'linear-gradient(to top, var(--team-primary), var(--team-secondary))',
+                    height: `${((data.overallRating - 50) / 50) * 100}%`,
+                    borderRadius: '2px',
+                    minHeight: '4px'
+                  }} title={`Season ${data.season}: ${data.overallRating} OVR (Age ${data.age})`} />
+                ))}
+              </div>
+              <div style={{fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px'}}>
+                Current: {game.ratings?.overall || 70} OVR • Peak: {Math.max(...trajectoryData.map(d => d.overallRating), 70)} OVR
+              </div>
             </div>
           </div>
         ) : (
-          <div style={{color: 'var(--text-muted)', textAlign: 'center', padding: '20px', fontSize: '12px'}}>
-            Complete your first season to see Hall of Fame analysis
+          <div style={{color: 'var(--text-muted)', fontSize: '14px', textAlign: 'center', padding: '40px'}}>
+            Play multiple seasons to see career progression
           </div>
         )}
       </div>
 
-      {/* Current League Rankings */}
-      <div className="panel panel-content-tight">
-        <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>Current Season Rankings</h3>
+      {/* MVP Race History */}
+      <div className="panel">
+        <h3 style={{marginBottom: '16px', color: 'var(--team-primary)'}}>MVP Award History</h3>
         
-        {seasons.length > 0 ? (
-          <div style={{gap: '8px', display: 'flex', flexDirection: 'column'}}>
-            {/* Player's Current Rank */}
-            <div style={{
-              background: playerCurrentRank <= 5 ? 'linear-gradient(135deg, #10b981, #059669)' :
-                          playerCurrentRank <= 10 ? 'linear-gradient(135deg, #f59e0b, #d97706)' :
-                          'linear-gradient(135deg, #6b7280, #4b5563)',
-              borderRadius: '8px',
-              padding: '8px',
-              textAlign: 'center'
-            }}>
-              <div style={{fontSize: '10px', color: 'white', opacity: '0.9', fontWeight: '600'}}>YOUR LEAGUE RANK</div>
-              <div style={{fontSize: '18px', fontWeight: 'bold', color: 'white'}}>#{playerCurrentRank}</div>
+        {mvpHistory.length > 0 ? (
+          <div style={{gap: '12px', display: 'flex', flexDirection: 'column'}}>
+            <div style={{fontSize: '13px', color: 'var(--text-secondary)', fontWeight: '600'}}>
+              Recent MVP Winners
             </div>
-
-            {/* Top 5 Current Players */}
-            <div style={{fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px', fontWeight: '600'}}>
-              Top Players This Season (by PER)
-            </div>
-            <div style={{maxHeight: '140px', overflowY: 'auto', gap: '2px', display: 'flex', flexDirection: 'column'}}>
-              {currentRankings.slice(0, 5).map((player, index) => (
+            <div style={{maxHeight: '300px', overflowY: 'auto', gap: '8px', display: 'flex', flexDirection: 'column'}}>
+              {mvpHistory.slice().reverse().map((mvp, index) => (
                 <div key={index} style={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  padding: '6px 8px',
-                  borderRadius: '6px',
-                  background: player.isPlayer ? 'var(--team-primary)' : 'var(--bg-secondary)',
-                  color: player.isPlayer ? 'var(--team-text)' : 'var(--text-primary)',
-                  fontSize: '10px'
+                  padding: '12px',
+                  borderRadius: '12px',
+                  background: mvp.isPlayer ? 
+                    'linear-gradient(135deg, var(--team-primary), var(--team-secondary))' : 
+                    'var(--bg-secondary)',
+                  border: mvp.isPlayer ? '2px solid var(--team-primary)' : '1px solid var(--border-subtle)',
+                  color: mvp.isPlayer ? 'white' : 'var(--text-primary)'
                 }}>
-                  <div style={{display: 'flex', alignItems: 'center', gap: '6px'}}>
-                    <span style={{fontWeight: 'bold', width: '16px'}}>#{player.rank}</span>
-                    <div>
-                      <div style={{fontWeight: '600'}}>{player.name}</div>
-                      <div style={{opacity: '0.7'}}>{player.team}</div>
+                  <div>
+                    <div style={{fontWeight: 'bold', fontSize: '14px'}}>
+                      {mvp.isPlayer ? '🏆 ' : ''}{mvp.playerName}
+                    </div>
+                    <div style={{fontSize: '12px', opacity: '0.8'}}>
+                      {mvp.team} • Season {mvp.season}
                     </div>
                   </div>
                   <div style={{textAlign: 'right'}}>
-                    <div>{fmt(player.ppg)} PPG</div>
-                    <div style={{opacity: '0.7'}}>{fmt(player.per)} PER</div>
+                    <div style={{fontWeight: 'bold', fontSize: '13px'}}>{mvp.stats}</div>
+                    <div style={{fontSize: '11px', opacity: '0.7'}}>PPG/RPG/APG</div>
                   </div>
                 </div>
               ))}
             </div>
           </div>
         ) : (
-          <div style={{color: 'var(--text-muted)', fontSize: '12px'}}>Complete a season to see rankings</div>
+          <div style={{color: 'var(--text-muted)', fontSize: '14px', textAlign: 'center', padding: '40px'}}>
+            Complete more seasons to see MVP history
+          </div>
         )}
       </div>
 
-      {/* All-Time Rankings */}
-      <div className="panel panel-content-tight">
-        <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>All-Time Rankings</h3>
+      {/* Extended All-Time Rankings */}
+      <div className="panel">
+        <h3 style={{marginBottom: '16px', color: 'var(--team-primary)'}}>Extended All-Time Rankings</h3>
         
         {seasons.length > 0 ? (
-          <div style={{gap: '8px', display: 'flex', flexDirection: 'column'}}>
-            {/* Player's All-Time Rank */}
+          <div style={{gap: '12px', display: 'flex', flexDirection: 'column'}}>
+            {/* Player's Detailed Rank */}
             <div style={{
-              background: playerAllTimeRank <= 10 ? 'linear-gradient(135deg, #fbbf24, #f59e0b)' :
-                          playerAllTimeRank <= 50 ? 'linear-gradient(135deg, #10b981, #059669)' :
-                          'linear-gradient(135deg, #6b7280, #4b5563)',
-              borderRadius: '8px',
-              padding: '8px',
+              background: designation.tier === 'Legendary' ? 'linear-gradient(135deg, #FFD700, #FFA500)' :
+                          designation.tier === 'Elite' ? 'linear-gradient(135deg, #C0C0C0, #A9A9A9)' :
+                          designation.tier === 'Great' ? 'linear-gradient(135deg, #CD7F32, #B8860B)' :
+                          'linear-gradient(135deg, var(--team-primary), var(--team-secondary))',
+              borderRadius: '12px',
+              padding: '16px',
               textAlign: 'center'
             }}>
-              <div style={{fontSize: '10px', color: 'white', opacity: '0.9', fontWeight: '600'}}>ALL-TIME RANK</div>
-              <div style={{fontSize: '18px', fontWeight: 'bold', color: 'white'}}>{formattedAllTimeRank}</div>
-              <div style={{fontSize: '9px', color: 'white', opacity: '0.8'}}>Legacy Score: {playerScore}</div>
+              <div style={{fontSize: '12px', color: 'white', opacity: '0.9', fontWeight: '600'}}>
+                YOUR ALL-TIME RANKING
+              </div>
+              <div style={{fontSize: '24px', fontWeight: 'bold', color: 'white', margin: '8px 0'}}>
+                {designation.title}
+              </div>
+              <div style={{fontSize: '11px', color: 'white', opacity: '0.8'}}>
+                Legacy Score: {playerScore} • {designation.tier} Tier
+              </div>
             </div>
 
-            {/* Top All-Time Players */}
-            <div style={{fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px', fontWeight: '600'}}>
-              All-Time Greats (by Legacy Score)
+            {/* Extended Top Players List */}
+            <div style={{fontSize: '13px', color: 'var(--text-secondary)', fontWeight: '600'}}>
+              All-Time Greats (Top 25)
             </div>
-            <div style={{maxHeight: '160px', overflowY: 'auto', gap: '2px', display: 'flex', flexDirection: 'column'}}>
-              {allTimeRankings.slice(0, 10).map((player, index) => (
-                <div key={index} style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '6px 8px',
-                  borderRadius: '6px',
-                  background: player.isPlayer ? 'var(--team-primary)' : 
-                             player.rank <= 3 ? 'linear-gradient(135deg, rgba(251, 191, 36, 0.1), rgba(245, 158, 11, 0.1))' :
-                             'var(--bg-secondary)',
-                  color: player.isPlayer ? 'var(--team-text)' : 'var(--text-primary)',
-                  fontSize: '10px',
-                  border: player.rank <= 3 ? '1px solid rgba(251, 191, 36, 0.3)' : '1px solid transparent'
+            <div style={{maxHeight: '400px', overflowY: 'auto', gap: '4px', display: 'flex', flexDirection: 'column'}}>
+              {allTimeRankings.slice(0, 25).map((player, index) => {
+                const rankDesignation = getPrestigiousDesignation(player.rank, player.score);
+                return (
+                  <div key={index} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    background: player.isPlayer ? 
+                      'linear-gradient(135deg, var(--team-primary), var(--team-secondary))' : 
+                      player.rank <= 3 ? `linear-gradient(135deg, ${rankDesignation.color}22, ${rankDesignation.color}11)` :
+                      'var(--bg-secondary)',
+                    border: player.rank <= 10 ? `1px solid ${rankDesignation.color}66` : '1px solid transparent',
+                    color: player.isPlayer ? 'white' : 'var(--text-primary)',
+                    fontSize: '11px'
+                  }}>
+                    <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                      <div style={{
+                        fontWeight: 'bold', 
+                        fontSize: '13px',
+                        color: player.rank <= 10 ? rankDesignation.color : 'inherit',
+                        minWidth: '32px'
+                      }}>
+                        {player.rank <= 3 ? 
+                          (player.rank === 1 ? '🥇' : player.rank === 2 ? '🥈' : '🥉') : 
+                          `#${player.rank}`}
+                      </div>
+                      <div>
+                        <div style={{fontWeight: '600', fontSize: '12px'}}>{player.name}</div>
+                        <div style={{opacity: '0.7', fontSize: '10px'}}>
+                          {player.championships} Rings • {player.mvps} MVPs • {player.allStars || 0} AS
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{textAlign: 'right'}}>
+                      <div style={{fontWeight: '700', fontSize: '13px', color: rankDesignation.color}}>
+                        {player.score}
+                      </div>
+                      <div style={{opacity: '0.7', fontSize: '9px'}}>{rankDesignation.tier}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div style={{color: 'var(--text-muted)', fontSize: '14px', textAlign: 'center', padding: '40px'}}>
+            Build your legacy to see all-time rankings
+          </div>
+        )}
+      </div>
+
+      {/* Advanced Career Statistics */}
+      <div className="panel">
+        <h3 style={{marginBottom: '16px', color: 'var(--team-primary)'}}>Advanced Metrics</h3>
+        
+        {seasons.length > 0 ? (
+          <div style={{gap: '16px', display: 'flex', flexDirection: 'column'}}>
+            {/* Advanced Stats Grid */}
+            <div className="stats-grid" style={{gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px'}}>
+              <div className="compact-stat">
+                <div className="compact-stat-label">Career PER</div>
+                <div className="compact-stat-value" style={{
+                  color: (game.career?.stats?.per || 0) >= 20 ? '#10b981' :
+                         (game.career?.stats?.per || 0) >= 15 ? '#f59e0b' : 'inherit'
                 }}>
-                  <div style={{display: 'flex', alignItems: 'center', gap: '6px'}}>
-                    <span style={{fontWeight: 'bold', width: '16px'}}>
-                      {player.rank <= 3 ? 
-                        (player.rank === 1 ? '🥇' : player.rank === 2 ? '🥈' : '🥉') : 
-                        `#${player.rank}`}
+                  {fmt(game.career?.stats?.per || 0)}
+                </div>
+              </div>
+              <div className="compact-stat">
+                <div className="compact-stat-label">True Shooting%</div>
+                <div className="compact-stat-value" style={{
+                  color: (game.career?.stats?.ts || 0) >= 0.6 ? '#10b981' :
+                         (game.career?.stats?.ts || 0) >= 0.55 ? '#f59e0b' : 'inherit'
+                }}>
+                  {fmt((game.career?.stats?.ts || 0) * 100, 1)}%
+                </div>
+              </div>
+              <div className="compact-stat">
+                <div className="compact-stat-label">Win Shares</div>
+                <div className="compact-stat-value">{fmt(careerWS.reduce((a, b) => a + b, 0))}</div>
+              </div>
+              <div className="compact-stat">
+                <div className="compact-stat-label">Career VORP</div>
+                <div className="compact-stat-value">{fmt(careerVORP.reduce((a, b) => a + b, 0))}</div>
+              </div>
+              <div className="compact-stat">
+                <div className="compact-stat-label">Games Played</div>
+                <div className="compact-stat-value">{game.career?.totals?.games || 0}</div>
+              </div>
+              <div className="compact-stat">
+                <div className="compact-stat-label">Peak Season</div>
+                <div className="compact-stat-value">
+                  {Math.max(...careerPPG, 0) > 0 ? `${fmt(Math.max(...careerPPG, 0))} PPG` : 'N/A'}
+                </div>
+              </div>
+            </div>
+
+            {/* Career Milestones */}
+            <div>
+              <div style={{fontSize: '13px', fontWeight: '600', marginBottom: '8px', color: 'var(--text-secondary)'}}>
+                Career Milestones
+              </div>
+              <div style={{gap: '8px', display: 'flex', flexDirection: 'column'}}>
+                {[
+                  { milestone: '1,000 Career Points', achieved: (game.career?.totals?.points || 0) >= 1000 },
+                  { milestone: '10,000 Career Points', achieved: (game.career?.totals?.points || 0) >= 10000 },
+                  { milestone: '20,000 Career Points', achieved: (game.career?.totals?.points || 0) >= 20000 },
+                  { milestone: 'First All-Star', achieved: (game.career?.totals?.allStars || 0) >= 1 },
+                  { milestone: 'First Championship', achieved: (game.career?.totals?.titles || 0) >= 1 },
+                  { milestone: 'First MVP Award', achieved: (game.career?.totals?.mvps || 0) >= 1 }
+                ].map((item, index) => (
+                  <div key={index} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '6px 8px',
+                    borderRadius: '6px',
+                    background: item.achieved ? 'var(--success)' : 'var(--bg-secondary)',
+                    fontSize: '11px'
+                  }}>
+                    <span style={{fontSize: '14px'}}>
+                      {item.achieved ? '✅' : '⏳'}
                     </span>
-                    <div>
-                      <div style={{fontWeight: '600'}}>{player.name}</div>
-                      <div style={{opacity: '0.7'}}>{player.championships}🏆 {player.mvps}👑</div>
-                    </div>
+                    <span style={{
+                      color: item.achieved ? 'white' : 'var(--text-muted)',
+                      fontWeight: item.achieved ? '600' : '400'
+                    }}>
+                      {item.milestone}
+                    </span>
                   </div>
-                  <div style={{textAlign: 'right'}}>
-                    <div style={{fontWeight: '600'}}>{player.score}</div>
-                    <div style={{opacity: '0.7'}}>Legacy</div>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
         ) : (
-          <div style={{color: 'var(--text-muted)', fontSize: '12px'}}>Build your legacy to see all-time rankings</div>
+          <div style={{color: 'var(--text-muted)', fontSize: '14px', textAlign: 'center', padding: '40px'}}>
+            Complete seasons to unlock advanced metrics
+          </div>
         )}
       </div>
+
     </div>
   );
 }
@@ -4598,6 +5247,269 @@ function Toast({ text }){
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 panel panel-content-tight z-50 fade-in">
       <div className="font-medium text-center">{text}</div>
+    </div>
+  );
+}
+
+// Avatar Component
+function Avatar({ appearance, size = 120, className = "" }) {
+  const svgContent = createAvatarSVG(appearance, size);
+  
+  return (
+    <div 
+      className={`avatar ${className}`}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        overflow: 'hidden',
+        border: '3px solid rgba(255, 255, 255, 0.2)',
+        background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05))',
+        backdropFilter: 'blur(10px)',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)'
+      }}
+      dangerouslySetInnerHTML={{ __html: svgContent }}
+    />
+  );
+}
+
+// Profile Picture Changer Component
+function ProfilePictureChanger({ currentAppearance, onAppearanceChange, onClose }) {
+  const [previewAppearance, setPreviewAppearance] = useState(currentAppearance);
+  const [activeCategory, setActiveCategory] = useState('face');
+  
+  const categories = {
+    face: {
+      name: 'Face',
+      options: {
+        skin: {
+          label: 'Skin Tone',
+          values: [
+            '#F5DEB3', '#DEB887', '#D2B48C', '#BC9A6A', 
+            '#A0522D', '#8B4513', '#654321', '#F4C2A1',
+            '#E6B887', '#C8956D', '#8D5524', '#5D4037'
+          ]
+        },
+        faceShape: {
+          label: 'Face Shape',
+          values: ['oval', 'round', 'square', 'heart', 'diamond', 'oblong']
+        }
+      }
+    },
+    hair: {
+      name: 'Hair',
+      options: {
+        hairStyle: {
+          label: 'Hair Style',
+          values: ['buzz', 'short', 'medium', 'long', 'curly', 'afro', 'fade', 'mohawk', 'bald', 'ponytail', 'dreadlocks', 'waves']
+        },
+        hairColor: {
+          label: 'Hair Color',
+          values: [
+            '#000000', '#2F1B14', '#8B4513', '#D2691E', 
+            '#DAA520', '#FFD700', '#B22222', '#FFFFFF', 
+            '#654321', '#4A4A4A', '#8B0000', '#2E2E2E'
+          ]
+        }
+      }
+    },
+    features: {
+      name: 'Features',
+      options: {
+        eyes: {
+          label: 'Eye Color',
+          values: [
+            '#8B4513', '#654321', '#4682B4', '#228B22', 
+            '#808080', '#000000', '#32CD32', '#4169E1',
+            '#20B2AA', '#8A2BE2', '#A0522D', '#2E8B57'
+          ]
+        },
+        nose: {
+          label: 'Nose Type',
+          values: ['small', 'medium', 'large', 'wide', 'narrow', 'button', 'hooked']
+        },
+        eyebrows: {
+          label: 'Eyebrows',
+          values: ['thin', 'medium', 'thick', 'bushy']
+        }
+      }
+    },
+    expression: {
+      name: 'Expression',
+      options: {
+        expression: {
+          label: 'Expression',
+          values: ['neutral', 'smile', 'smirk', 'serious', 'confident', 'determined']
+        },
+        facialHair: {
+          label: 'Facial Hair',
+          values: ['none', 'mustache', 'goatee', 'full_beard', 'stubble', 'soul_patch', 'mutton_chops']
+        }
+      }
+    }
+  };
+  
+  const updateFeature = (feature, value) => {
+    setPreviewAppearance(prev => ({
+      ...prev,
+      [feature]: value
+    }));
+  };
+  
+  const randomizeAll = () => {
+    setPreviewAppearance(generateAppearance());
+  };
+  
+  const saveChanges = () => {
+    onAppearanceChange(previewAppearance);
+    onClose();
+  };
+  
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+      <div className="panel" style={{ 
+        maxWidth: '800px', 
+        width: '90%', 
+        maxHeight: '90vh', 
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column'
+      }}>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          marginBottom: '20px',
+          paddingBottom: '15px',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+          <h2 style={{ color: 'var(--team-primary)', margin: 0 }}>Customize Avatar</h2>
+          <button 
+            className="btn btn-ghost btn-sm" 
+            onClick={onClose}
+            style={{ padding: '8px 12px' }}
+          >
+            ✕
+          </button>
+        </div>
+        
+        <div style={{ display: 'flex', gap: '24px', flex: 1, overflow: 'hidden' }}>
+          {/* Preview Section */}
+          <div style={{ 
+            flex: '0 0 200px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '16px'
+          }}>
+            <Avatar appearance={previewAppearance} size={160} />
+            
+            <div style={{ display: 'flex', gap: '8px', flexDirection: 'column', width: '100%' }}>
+              <button 
+                className="btn btn-secondary btn-sm" 
+                onClick={randomizeAll}
+                style={{ fontSize: '12px' }}
+              >
+                🎲 Randomize All
+              </button>
+              <button 
+                className="btn btn-primary" 
+                onClick={saveChanges}
+                style={{ fontSize: '14px', padding: '12px' }}
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+          
+          {/* Customization Options */}
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {/* Category Tabs */}
+            <div style={{ 
+              display: 'flex', 
+              gap: '8px', 
+              marginBottom: '16px',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+              paddingBottom: '12px'
+            }}>
+              {Object.entries(categories).map(([key, category]) => (
+                <button
+                  key={key}
+                  className={`btn btn-sm ${activeCategory === key ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => setActiveCategory(key)}
+                  style={{ fontSize: '12px', padding: '8px 12px' }}
+                >
+                  {category.name}
+                </button>
+              ))}
+            </div>
+            
+            {/* Options for Active Category */}
+            <div style={{ 
+              flex: 1, 
+              overflow: 'auto',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none'
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {Object.entries(categories[activeCategory].options).map(([optionKey, option]) => (
+                  <div key={optionKey}>
+                    <div style={{ 
+                      fontSize: '14px', 
+                      fontWeight: '600', 
+                      marginBottom: '8px',
+                      color: 'var(--text-secondary)'
+                    }}>
+                      {option.label}
+                    </div>
+                    
+                    <div style={{ 
+                      display: 'grid', 
+                      gridTemplateColumns: optionKey.includes('Color') || optionKey === 'skin' ? 
+                        'repeat(6, 1fr)' : 'repeat(3, 1fr)',
+                      gap: '8px'
+                    }}>
+                      {option.values.map((value, index) => {
+                        const isSelected = previewAppearance[optionKey] === value;
+                        const isColor = optionKey.includes('Color') || optionKey === 'skin';
+                        
+                        return (
+                          <button
+                            key={index}
+                            onClick={() => updateFeature(optionKey, value)}
+                            style={{
+                              padding: isColor ? '0' : '8px 12px',
+                              borderRadius: '8px',
+                              border: isSelected ? 
+                                '3px solid var(--team-primary)' : 
+                                '2px solid rgba(255, 255, 255, 0.1)',
+                              background: isColor ? value : 
+                                isSelected ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                              color: isColor ? 'transparent' : 'var(--text-primary)',
+                              fontSize: '12px',
+                              fontWeight: isSelected ? '600' : '400',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease',
+                              aspectRatio: isColor ? '1' : 'auto',
+                              minHeight: isColor ? '32px' : '36px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              textTransform: 'capitalize'
+                            }}
+                          >
+                            {isColor ? '' : value.replace('_', ' ')}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -5591,4 +6503,19 @@ function getLegacyColor(score) {
 
 // ---------- Persistence ----------
 function saveGame(game){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(game)); }catch{} }
-function loadGame(){ try{ const s = localStorage.getItem(STORAGE_KEY); return s? JSON.parse(s): null; }catch{ return null; } }
+function loadGame(){ 
+  try{ 
+    const s = localStorage.getItem(STORAGE_KEY); 
+    if (!s) return null;
+    const game = JSON.parse(s);
+    
+    // Backward compatibility: Add appearance if missing
+    if (game && !game.appearance) {
+      game.appearance = generateAppearance();
+    }
+    
+    return game;
+  } catch { 
+    return null; 
+  } 
+}
