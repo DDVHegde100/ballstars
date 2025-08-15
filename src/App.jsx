@@ -3331,6 +3331,233 @@ export default function BasketballLife(){
     });
   }
 
+  // Season Summary and Analytics System
+  function generateSeasonSummary(team, currentYear) {
+    const seasonRecord = {
+      wins: team.performance.wins,
+      losses: team.performance.losses,
+      winPercentage: (team.performance.wins / 82 * 100).toFixed(1)
+    };
+    
+    // League standings (simulate 30 teams)
+    const leagueStandings = Array.from({length: 30}, (_, i) => ({
+      team: `Team ${i + 1}`,
+      wins: irnd(20, 65),
+      losses: 82 - irnd(20, 65)
+    })).sort((a, b) => b.wins - a.wins);
+    
+    // Add our team to standings
+    leagueStandings.push({
+      team: team.team,
+      wins: team.performance.wins,
+      losses: team.performance.losses,
+      isPlayerTeam: true
+    });
+    
+    // Sort again and find our position
+    leagueStandings.sort((a, b) => b.wins - a.wins);
+    const teamPosition = leagueStandings.findIndex(t => t.isPlayerTeam) + 1;
+    
+    // Determine playoff status
+    const madePlayoffs = teamPosition <= 16;
+    const conferencePosition = Math.ceil(teamPosition / 2); // Rough conference position
+    
+    // Championship determination
+    const wonChampionship = madePlayoffs && team.performance.wins >= 55 && chance(team.performance.championshipOdds / 100);
+    
+    // Player awards generation
+    const playerAwards = generatePlayerAwards(team.roster, seasonRecord);
+    
+    // Financial summary
+    const seasonFinancials = {
+      totalRevenue: team.finances.revenue,
+      totalExpenses: team.finances.expenses,
+      netProfit: team.finances.profit,
+      ticketSales: Math.round((team.finances.ticketPrices * team.finances.attendance * 41) / 1000000),
+      merchandising: team.finances.merchandising,
+      sponsorships: team.finances.sponsorships,
+      endorsements: team.finances.endorsements || 0,
+      broadcasting: team.finances.tvDeals,
+      playoffBonus: madePlayoffs ? irnd(50, 150) : 0,
+      championshipBonus: wonChampionship ? irnd(200, 400) : 0
+    };
+    
+    // Team owner performance metrics
+    const ownerMetrics = {
+      seasonsOwned: team.achievements.seasonsOwned + 1,
+      totalWins: team.achievements.totalWins + team.performance.wins,
+      totalRevenue: (team.achievements.totalRevenue || 0) + seasonFinancials.totalRevenue,
+      averageWinPercentage: ((team.achievements.totalWins + team.performance.wins) / ((team.achievements.seasonsOwned + 1) * 82) * 100).toFixed(1),
+      fanSatisfactionGrowth: team.operations.fanSatisfaction - (team.achievements.lastSeasonFanSatisfaction || 75),
+      valueIncrease: team.currentValue - (team.achievements.lastSeasonValue || team.purchasePrice)
+    };
+    
+    return {
+      year: currentYear,
+      record: seasonRecord,
+      standings: {
+        position: teamPosition,
+        conferencePosition,
+        madePlayoffs,
+        wonChampionship
+      },
+      financials: seasonFinancials,
+      playerAwards,
+      ownerMetrics,
+      teamStats: {
+        averageAttendance: team.finances.attendance,
+        fanSatisfaction: team.operations.fanSatisfaction,
+        teamChemistry: team.operations.teamChemistry,
+        mediaRating: team.operations.mediaRating,
+        socialMediaGrowth: (team.operations.socialMediaFollowers - (team.achievements.lastSeasonFollowers || 1000000)) / 1000000
+      }
+    };
+  }
+  
+  function generatePlayerAwards(roster, seasonRecord) {
+    const awards = [];
+    const topPlayers = roster.filter(p => p.overall >= 85).sort((a, b) => b.overall - a.overall);
+    
+    if (topPlayers.length > 0) {
+      const mvpCandidate = topPlayers[0];
+      if (mvpCandidate.overall >= 90 && seasonRecord.wins >= 45) {
+        if (chance(0.3)) {
+          awards.push({
+            player: mvpCandidate.name,
+            award: 'NBA MVP',
+            description: `${mvpCandidate.overall} OVR superstar performance`
+          });
+        }
+      }
+      
+      // All-Star selections
+      topPlayers.slice(0, 3).forEach(player => {
+        if (player.overall >= 85 && chance(0.6)) {
+          awards.push({
+            player: player.name,
+            award: 'NBA All-Star',
+            description: `${player.overall} OVR - Fan favorite`
+          });
+        }
+      });
+      
+      // Rookie of the Year (for young players)
+      const rookies = roster.filter(p => p.age <= 22 && p.overall >= 75);
+      if (rookies.length > 0 && chance(0.4)) {
+        awards.push({
+          player: rookies[0].name,
+          award: 'Rookie of the Year',
+          description: `${rookies[0].overall} OVR rookie sensation`
+        });
+      }
+      
+      // Defensive Player of the Year
+      const defenders = roster.filter(p => p.overall >= 80 && p.position !== 'PG');
+      if (defenders.length > 0 && chance(0.2)) {
+        awards.push({
+          player: defenders[0].name,
+          award: 'Defensive Player of the Year',
+          description: `Elite defensive anchor`
+        });
+      }
+    }
+    
+    return awards;
+  }
+  
+  function simulateFullSeason(teamIndex) {
+    setGame(prev => {
+      const p = deepClone(prev);
+      const team = p.postRetirement.ownedTeams[teamIndex];
+      
+      if (!team) return p;
+      
+      // Generate season performance based on team strength
+      const teamStrength = team.roster.reduce((sum, player) => sum + player.overall, 0) / team.roster.length;
+      const chemistryBonus = team.operations.teamChemistry / 10;
+      const coachingBonus = team.operations.coachingStaff / 10;
+      const facilityBonus = team.operations.facilityQuality / 20;
+      
+      const totalStrength = teamStrength + chemistryBonus + coachingBonus + facilityBonus;
+      
+      // Calculate wins based on team strength (20-65 win range)
+      let expectedWins = Math.round((totalStrength - 70) * 0.8 + 41);
+      expectedWins = Math.max(20, Math.min(65, expectedWins + irnd(-8, 8))); // Add randomness
+      
+      team.performance.wins = expectedWins;
+      team.performance.losses = 82 - expectedWins;
+      
+      // Generate comprehensive season summary
+      const seasonSummary = generateSeasonSummary(team, p.postRetirement.currentYear);
+      
+      // Update team achievements and metrics
+      team.achievements.seasonsOwned++;
+      team.achievements.totalWins += expectedWins;
+      team.achievements.lastSeasonFanSatisfaction = team.operations.fanSatisfaction;
+      team.achievements.lastSeasonValue = team.currentValue;
+      team.achievements.lastSeasonFollowers = team.operations.socialMediaFollowers;
+      
+      if (seasonSummary.standings.wonChampionship) {
+        team.achievements.titlesWon++;
+        team.achievements.awards.push({
+          year: p.postRetirement.currentYear,
+          type: 'Championship',
+          description: `NBA Champions (${expectedWins}-${82 - expectedWins})`
+        });
+      }
+      
+      if (seasonSummary.standings.madePlayoffs) {
+        team.achievements.playoffAppearances++;
+      }
+      
+      // Update team value based on performance
+      let valueChange = 0;
+      if (seasonSummary.standings.wonChampionship) {
+        valueChange = irnd(400, 800); // $400-800M boost for championship
+      } else if (seasonSummary.standings.madePlayoffs) {
+        valueChange = irnd(100, 300); // $100-300M boost for playoffs
+      } else if (expectedWins >= 35) {
+        valueChange = irnd(-50, 100); // Slight change for mediocre season
+      } else {
+        valueChange = irnd(-200, -50); // Value decrease for poor season
+      }
+      
+      team.currentValue = Math.max(team.currentValue + valueChange, team.purchasePrice * 0.7);
+      
+      // Financial impact
+      const playoffBonus = seasonSummary.standings.madePlayoffs ? seasonSummary.financials.playoffBonus : 0;
+      const championshipBonus = seasonSummary.standings.wonChampionship ? seasonSummary.financials.championshipBonus : 0;
+      
+      team.finances.revenue += playoffBonus + championshipBonus;
+      team.finances.profit = team.finances.revenue - team.finances.expenses;
+      
+      // Update total revenue tracking
+      if (!team.achievements.totalRevenue) team.achievements.totalRevenue = 0;
+      team.achievements.totalRevenue += team.finances.revenue;
+      
+      // Store season summary for display
+      team.lastSeasonSummary = seasonSummary;
+      
+      // Update current year
+      p.postRetirement.currentYear++;
+      
+      // Age players by 1 year and update some stats
+      team.roster.forEach(player => {
+        player.age++;
+        // Slight overall changes based on age
+        if (player.age > 33) {
+          player.overall = Math.max(player.overall - irnd(1, 3), 65);
+        } else if (player.age < 25) {
+          player.overall = Math.min(player.overall + irnd(0, 2), 99);
+        }
+      });
+      
+      pushToast(`🏀 Season ${seasonSummary.year} completed! ${expectedWins}-${82 - expectedWins} record`, 'success');
+      
+      return p;
+    });
+  }
+
   // Enhanced Team Ownership Management System
   function manageTeamOwnership(teamIndex, action, value, playerData = null) {
     setGame(prev => {
@@ -3530,6 +3757,159 @@ export default function BasketballLife(){
           p.career.timeline.push(event("Business", `Sold ${team.team} for ${formatMoney(teamSalePrice)}`));
           
           pushToast(`💸 Successfully sold ${team.team} for ${formatMoney(teamSalePrice)}!`, 'success');
+          break;
+          
+        case 'release_player':
+          if (playerData && playerData.playerIndex !== undefined) {
+            const playerToRelease = team.roster[playerData.playerIndex];
+            if (playerToRelease) {
+              // Calculate release cost (remaining salary)
+              const releaseCost = Math.round(playerToRelease.salary * 0.75); // 75% of salary as penalty
+              
+              if (p.cash >= releaseCost) {
+                p.cash -= releaseCost;
+                
+                // Remove player from roster
+                team.roster.splice(playerData.playerIndex, 1);
+                
+                // Team chemistry impact
+                team.operations.teamChemistry = Math.max(30, team.operations.teamChemistry - irnd(5, 15));
+                
+                // Fan reaction based on player popularity
+                const fanImpact = playerToRelease.overall >= 85 ? -irnd(10, 20) : -irnd(2, 8);
+                team.operations.fanSatisfaction = Math.max(20, team.operations.fanSatisfaction + fanImpact);
+                
+                updateTeamRevenue(team);
+                pushToast(`📤 Released ${playerToRelease.name} (Cost: ${formatMoney(releaseCost)})`, 'warning');
+              } else {
+                pushToast(`Need ${formatMoney(releaseCost)} to release ${playerToRelease.name}`, 'error');
+              }
+            }
+          }
+          break;
+          
+        case 'adjust_player_salary':
+          if (playerData && playerData.playerIndex !== undefined && value) {
+            const playerToAdjust = team.roster[playerData.playerIndex];
+            if (playerToAdjust) {
+              const salaryIncrease = value - playerToAdjust.salary;
+              
+              if (salaryIncrease > 0 && p.cash >= salaryIncrease * 5) { // 5x multiplier for salary increases
+                p.cash -= salaryIncrease * 5;
+                playerToAdjust.salary = value;
+                
+                // Player happiness and performance boost
+                if (salaryIncrease > 10) {
+                  playerToAdjust.overall = Math.min(99, playerToAdjust.overall + irnd(1, 3));
+                  team.operations.teamChemistry = Math.min(100, team.operations.teamChemistry + irnd(3, 8));
+                }
+                
+                team.finances.totalPayroll += salaryIncrease;
+                updateTeamRevenue(team);
+                pushToast(`💰 ${playerToAdjust.name}'s salary adjusted to ${formatMoney(value)}`, 'success');
+              } else if (salaryIncrease <= 0) {
+                playerToAdjust.salary = value;
+                
+                // Player unhappiness for salary cuts
+                if (salaryIncrease < -5) {
+                  playerToAdjust.overall = Math.max(60, playerToAdjust.overall - irnd(1, 2));
+                  team.operations.teamChemistry = Math.max(30, team.operations.teamChemistry - irnd(5, 10));
+                }
+                
+                team.finances.totalPayroll += salaryIncrease;
+                updateTeamRevenue(team);
+                pushToast(`📉 ${playerToAdjust.name}'s salary reduced to ${formatMoney(value)}`, 'warning');
+              } else {
+                pushToast(`Need ${formatMoney(salaryIncrease * 5)} to increase salary`, 'error');
+              }
+            }
+          }
+          break;
+          
+        case 'set_starting_lineup':
+          if (playerData && playerData.startingFive) {
+            team.startingLineup = playerData.startingFive;
+            
+            // Chemistry boost for setting optimal lineup
+            const avgOverall = team.startingLineup.reduce((sum, idx) => sum + team.roster[idx].overall, 0) / 5;
+            if (avgOverall >= 85) {
+              team.operations.teamChemistry = Math.min(100, team.operations.teamChemistry + 5);
+            }
+            
+            pushToast('🏀 Starting lineup updated!', 'success');
+          }
+          break;
+          
+        case 'open_superstar_market':
+          // Generate available superstars for trade
+          const availableSuperstars = generateSuperstarsForTrade();
+          team.availableSuperstars = availableSuperstars;
+          pushToast('⭐ Superstar market opened! Choose your target player.', 'info');
+          break;
+          
+        case 'propose_superstar_trade':
+          if (playerData && playerData.targetSuperstar && playerData.tradedPlayers) {
+            const { targetSuperstar, tradedPlayers, cashOffered } = playerData;
+            
+            // Calculate total trade cost
+            const totalTradeCost = cashOffered + 100; // $100M trade processing fee
+            const luxuryTax = targetSuperstar.overall >= 95 ? 200 : targetSuperstar.overall >= 90 ? 150 : 100;
+            const finalCost = totalTradeCost + luxuryTax;
+            
+            if (p.cash >= finalCost) {
+              // Calculate trade success probability
+              const tradedValue = tradedPlayers.reduce((sum, idx) => sum + team.roster[idx].overall, 0) / tradedPlayers.length;
+              let successChance = 0.3; // Base 30%
+              
+              if (tradedValue >= targetSuperstar.overall - 5) successChance = 0.8;
+              else if (tradedValue >= targetSuperstar.overall - 10) successChance = 0.6;
+              else if (tradedValue >= targetSuperstar.overall - 15) successChance = 0.4;
+              else successChance = 0.2;
+              
+              // Cash bonus increases success
+              successChance += (cashOffered / 500) * 0.1; // Each $500M adds 10%
+              successChance = Math.min(0.95, successChance);
+              
+              const tradeSuccess = chance(successChance);
+              
+              if (tradeSuccess) {
+                p.cash -= finalCost;
+                
+                // Remove traded players
+                const removedPlayers = [];
+                tradedPlayers.sort((a, b) => b - a).forEach(idx => {
+                  removedPlayers.push(team.roster[idx].name);
+                  team.roster.splice(idx, 1);
+                });
+                
+                // Add superstar
+                team.roster.push(targetSuperstar);
+                
+                // Team chemistry adjustment
+                team.operations.teamChemistry = Math.max(40, team.operations.teamChemistry + irnd(-10, 20));
+                team.operations.fanSatisfaction = Math.min(100, team.operations.fanSatisfaction + irnd(15, 30));
+                team.performance.championshipOdds = Math.min(95, team.performance.championshipOdds + irnd(10, 25));
+                
+                updateTeamRevenue(team);
+                pushToast(`⭐ TRADE SUCCESS! Acquired ${targetSuperstar.name} (${targetSuperstar.overall} OVR)`, 'success');
+              } else {
+                pushToast(`❌ Trade rejected! Success chance was ${Math.round(successChance * 100)}%`, 'error');
+              }
+              
+              delete team.availableSuperstars;
+            } else {
+              pushToast(`Need ${formatMoney(finalCost)} for this superstar trade`, 'error');
+            }
+          }
+          break;
+          
+        case 'simulate_season':
+          simulateFullSeason(teamIndex);
+          break;
+          
+        case 'close_superstar_market':
+          delete team.availableSuperstars;
+          pushToast('Superstar market closed', 'info');
           break;
 
         case 'trade_for_star':
@@ -3744,6 +4124,57 @@ export default function BasketballLife(){
     pushToast(`📅 Season completed: ${actualWins}-${actualLosses} record`, 'info');
   }
   
+  function generateSuperstarsForTrade() {
+    const superstars = [];
+    const superstarNames = [
+      'LeBron James', 'Stephen Curry', 'Kevin Durant', 'Giannis Antetokounmpo',
+      'Luka Dončić', 'Jayson Tatum', 'Joel Embiid', 'Nikola Jokić',
+      'Damian Lillard', 'Jimmy Butler', 'Kawhi Leonard', 'Anthony Davis',
+      'Devin Booker', 'Zion Williamson', 'Ja Morant', 'Trae Young'
+    ];
+    
+    const positions = ['PG', 'SG', 'SF', 'PF', 'C'];
+    
+    for (let i = 0; i < 8; i++) {
+      const name = pick(superstarNames);
+      superstars.push({
+        name: name,
+        position: pick(positions),
+        overall: irnd(88, 97),
+        age: irnd(24, 34),
+        salary: irnd(35, 55), // $35-55M salary
+        tradeCost: irnd(300, 800), // $300-800M trade cost
+        contract: irnd(2, 4) + ' years',
+        specialties: generatePlayerSpecialties(),
+        stats: {
+          ppg: irnd(20, 35),
+          rpg: irnd(4, 12),
+          apg: irnd(3, 11),
+          spg: irnd(1, 3),
+          bpg: irnd(0, 3)
+        }
+      });
+    }
+    
+    return superstars;
+  }
+  
+  function generatePlayerSpecialties() {
+    const specialties = [
+      'Elite Scorer', 'Playmaker', 'Lockdown Defender', 'Clutch Performer',
+      'Floor General', 'Rim Protector', 'Three-Point Specialist', 'Rebounder',
+      'Versatile', 'Team Leader', 'Fast Break Expert', 'Post Scorer'
+    ];
+    
+    const count = irnd(1, 3);
+    const selected = [];
+    for (let i = 0; i < count; i++) {
+      const specialty = pick(specialties.filter(s => !selected.includes(s)));
+      selected.push(specialty);
+    }
+    return selected;
+  }
+
   function updateTeamRevenue(team) {
     // Enhanced revenue calculation
     const baseRevenue = 180; // $180M base
@@ -7730,15 +8161,15 @@ function TeamOwnershipPanel({ game, onManageTeam }) {
                     </div>
                     
                     <div className="action-card">
-                      <h5>⭐ Acquire Superstar</h5>
-                      <p>Championship Odds: {team.performance.championshipOdds}%</p>
-                      <p>Cost: {formatMoney(150)}-{formatMoney(300)}</p>
+                      <h5>⭐ Superstar Market</h5>
+                      <p>Elite players available</p>
+                      <p>Cost: {formatMoney(300)}-{formatMoney(800)}</p>
                       <button 
                         className="btn btn-success btn-sm"
-                        onClick={() => onManageTeam(index, 'trade_for_star')}
+                        onClick={() => onManageTeam(index, 'open_superstar_market')}
                         style={{width: '100%', marginTop: '1rem'}}
                       >
-                        Trade for Star
+                        View Available Stars
                       </button>
                     </div>
                     
@@ -7827,13 +8258,56 @@ function TeamOwnershipPanel({ game, onManageTeam }) {
                       <p>Free</p>
                       <button 
                         className="btn btn-info btn-sm"
-                        onClick={() => onManageTeam(index, 'advance_season')}
+                        onClick={() => onManageTeam(index, 'simulate_season')}
                         style={{width: '100%', marginTop: '1rem'}}
                       >
-                        Advance Season
+                        🏀 SIMULATE FULL SEASON
                       </button>
                     </div>
                   </div>
+                  
+                  {/* Season Summary Section */}
+                  {team.lastSeasonSummary && (
+                    <div style={{marginTop: '2rem', padding: '1.5rem', background: 'linear-gradient(135deg, rgba(34,197,94,0.1), rgba(16,185,129,0.1))', border: '2px solid rgba(34,197,94,0.3)', borderRadius: '12px'}}>
+                      <h5 style={{color: '#10b981', marginBottom: '1rem'}}>🏆 Season {team.lastSeasonSummary.year} Summary</h5>
+                      <div style={{display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem', marginBottom: '1rem'}}>
+                        <div>
+                          <p><strong>Record:</strong> {team.lastSeasonSummary.record.wins}-{team.lastSeasonSummary.record.losses} ({team.lastSeasonSummary.record.winPercentage}%)</p>
+                          <p><strong>League Position:</strong> #{team.lastSeasonSummary.standings.position}/30</p>
+                          <p><strong>Playoffs:</strong> {team.lastSeasonSummary.standings.madePlayoffs ? '✅ Made Playoffs' : '❌ Missed Playoffs'}</p>
+                          {team.lastSeasonSummary.standings.wonChampionship && <p style={{color: '#fbbf24', fontWeight: 'bold'}}>🏆 NBA CHAMPIONS!</p>}
+                        </div>
+                        <div>
+                          <p><strong>Revenue:</strong> {formatMoney(team.lastSeasonSummary.financials.totalRevenue)}</p>
+                          <p><strong>Profit:</strong> <span style={{color: team.lastSeasonSummary.financials.netProfit > 0 ? '#10b981' : '#ef4444'}}>{formatMoney(team.lastSeasonSummary.financials.netProfit)}</span></p>
+                          <p><strong>Fan Satisfaction:</strong> {team.lastSeasonSummary.teamStats.fanSatisfaction}%</p>
+                        </div>
+                      </div>
+                      
+                      {team.lastSeasonSummary.playerAwards.length > 0 && (
+                        <div style={{marginTop: '1rem'}}>
+                          <h6>🏅 Player Awards:</h6>
+                          {team.lastSeasonSummary.playerAwards.map((award, idx) => (
+                            <p key={idx} style={{margin: '0.25rem 0', color: '#fbbf24'}}>
+                              • {award.player} - {award.award}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                      
+                      <div style={{marginTop: '1rem', padding: '1rem', background: 'rgba(0,0,0,0.1)', borderRadius: '8px'}}>
+                        <h6>📈 Owner Performance:</h6>
+                        <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem'}}>
+                          <p><strong>Seasons Owned:</strong> {team.lastSeasonSummary.ownerMetrics.seasonsOwned}</p>
+                          <p><strong>Total Wins:</strong> {team.lastSeasonSummary.ownerMetrics.totalWins}</p>
+                          <p><strong>Avg Win %:</strong> {team.lastSeasonSummary.ownerMetrics.averageWinPercentage}%</p>
+                          <p><strong>Championships:</strong> {team.achievements.titlesWon}</p>
+                          <p><strong>Total Revenue:</strong> {formatMoney(team.lastSeasonSummary.ownerMetrics.totalRevenue)}</p>
+                          <p><strong>Team Value:</strong> {formatMoney(team.currentValue)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   
                   {/* Sell Team Section */}
                   <div style={{marginTop: '2rem', padding: '1.5rem', background: 'rgba(239,68,68,0.1)', border: '2px solid rgba(239,68,68,0.3)', borderRadius: '12px'}}>
@@ -7987,7 +8461,7 @@ function TeamOwnershipPanel({ game, onManageTeam }) {
                           </button>
                           <button 
                             className="btn btn-xs btn-danger"
-                            onClick={() => console.log('Release player:', player.name)}
+                            onClick={() => onManageTeam(index, 'release_player', null, { playerIndex: playerIndex })}
                             style={{flex: 1}}
                           >
                             Release
@@ -8034,6 +8508,110 @@ function TeamOwnershipPanel({ game, onManageTeam }) {
                     </p>
                   )}
                 </div>
+                
+                {/* Superstar Market Modal */}
+                {team.availableSuperstars && (
+                  <div style={{marginTop: '2rem'}}>
+                    <div className="panel" style={{
+                      background: 'linear-gradient(135deg, rgba(255,215,0,0.1), rgba(255,107,53,0.1))',
+                      border: '2px solid rgba(255,215,0,0.3)'
+                    }}>
+                      <h4>⭐ Available Superstars</h4>
+                      <p style={{marginBottom: '1.5rem', opacity: 0.8}}>Choose your target player and select which players/cash to offer:</p>
+                      
+                      <div style={{display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem', marginBottom: '2rem'}}>
+                        {team.availableSuperstars.map((superstar, idx) => (
+                          <div key={idx} className="panel" style={{
+                            padding: '1rem',
+                            background: superstar.overall >= 95 ? 'rgba(255,215,0,0.2)' : superstar.overall >= 90 ? 'rgba(34,197,94,0.2)' : 'rgba(59,130,246,0.2)',
+                            border: `2px solid ${superstar.overall >= 95 ? 'rgba(255,215,0,0.5)' : superstar.overall >= 90 ? 'rgba(34,197,94,0.5)' : 'rgba(59,130,246,0.5)'}`
+                          }}>
+                            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem'}}>
+                              <h5 style={{margin: 0, color: superstar.overall >= 95 ? '#fbbf24' : superstar.overall >= 90 ? '#10b981' : '#3b82f6'}}>
+                                {superstar.name}
+                              </h5>
+                              <span style={{
+                                padding: '0.25rem 0.5rem',
+                                borderRadius: '12px',
+                                fontSize: '0.8rem',
+                                fontWeight: 'bold',
+                                background: superstar.overall >= 95 ? '#fbbf24' : superstar.overall >= 90 ? '#10b981' : '#3b82f6',
+                                color: 'white'
+                              }}>
+                                {superstar.overall} OVR
+                              </span>
+                            </div>
+                            
+                            <div style={{display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem', fontSize: '0.9rem', marginBottom: '1rem'}}>
+                              <p><strong>Position:</strong> {superstar.position}</p>
+                              <p><strong>Age:</strong> {superstar.age}</p>
+                              <p><strong>Salary:</strong> {formatMoney(superstar.salary)}</p>
+                              <p><strong>Contract:</strong> {superstar.contract}</p>
+                            </div>
+                            
+                            <div style={{marginBottom: '1rem'}}>
+                              <p style={{fontWeight: 'bold', marginBottom: '0.5rem'}}>Stats:</p>
+                              <div style={{display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.25rem', fontSize: '0.8rem'}}>
+                                <span>{superstar.stats.ppg} PPG</span>
+                                <span>{superstar.stats.rpg} RPG</span>
+                                <span>{superstar.stats.apg} APG</span>
+                                <span>{superstar.stats.spg} SPG</span>
+                                <span>{superstar.stats.bpg} BPG</span>
+                              </div>
+                            </div>
+                            
+                            <div style={{marginBottom: '1rem'}}>
+                              <p style={{fontWeight: 'bold', marginBottom: '0.5rem'}}>Specialties:</p>
+                              <div style={{display: 'flex', flexWrap: 'wrap', gap: '0.25rem'}}>
+                                {superstar.specialties.map((specialty, sIdx) => (
+                                  <span key={sIdx} style={{
+                                    padding: '0.125rem 0.25rem',
+                                    borderRadius: '8px',
+                                    fontSize: '0.7rem',
+                                    background: 'rgba(255,255,255,0.2)',
+                                    border: '1px solid rgba(255,255,255,0.3)'
+                                  }}>
+                                    {specialty}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                            
+                            <div style={{textAlign: 'center'}}>
+                              <p style={{fontWeight: 'bold', color: '#ef4444', marginBottom: '0.5rem'}}>
+                                Trade Cost: {formatMoney(superstar.tradeCost)}
+                              </p>
+                              <button 
+                                className="btn btn-warning btn-sm"
+                                onClick={() => {
+                                  const tradedPlayers = [0, 1]; // Example: trade first 2 players
+                                  const cashOffered = 200; // Example: $200M cash
+                                  onManageTeam(index, 'propose_superstar_trade', null, {
+                                    targetSuperstar: superstar,
+                                    tradedPlayers,
+                                    cashOffered
+                                  });
+                                }}
+                                style={{width: '100%'}}
+                              >
+                                Propose Trade
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      
+                      <div style={{textAlign: 'center'}}>
+                        <button 
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => onManageTeam(index, 'close_superstar_market')}
+                        >
+                          Close Market
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
