@@ -940,6 +940,228 @@ const getCareerLongevityProjection = (player) => {
   return { projection, yearsLeft: projectedYears, multiplier: longevityMultiplier };
 };
 
+// ========== FATIGUE MANAGEMENT SYSTEM ==========
+
+// Fatigue levels and their effects
+const FATIGUE_LEVELS = {
+  fresh: { name: "Fresh", min: 85, color: "#10b981", performanceMultiplier: 1.0, injuryRisk: 1.0 },
+  good: { name: "Good", min: 70, color: "#22c55e", performanceMultiplier: 0.98, injuryRisk: 1.1 },
+  tired: { name: "Tired", min: 50, color: "#eab308", performanceMultiplier: 0.94, injuryRisk: 1.3 },
+  fatigued: { name: "Fatigued", min: 30, color: "#f97316", performanceMultiplier: 0.88, injuryRisk: 1.6 },
+  exhausted: { name: "Exhausted", min: 0, color: "#ef4444", performanceMultiplier: 0.80, injuryRisk: 2.0 }
+};
+
+// Calculate fatigue level from energy value
+const getFatigueLevel = (energy) => {
+  for (const [key, level] of Object.entries(FATIGUE_LEVELS)) {
+    if (energy >= level.min) return { key, ...level };
+  }
+  return { key: "exhausted", ...FATIGUE_LEVELS.exhausted };
+};
+
+// Calculate game fatigue based on minutes played and intensity
+const calculateGameFatigue = (player, minutesPlayed, gameIntensity = 1.0) => {
+  let baseFatigue = minutesPlayed * 1.8; // Base fatigue per minute
+  
+  // Age affects fatigue accumulation
+  if (player.age >= 30) baseFatigue *= 1.15;
+  if (player.age >= 33) baseFatigue *= 1.25;
+  if (player.age >= 36) baseFatigue *= 1.4;
+  
+  // Stamina rating reduces fatigue
+  const staminaMultiplier = Math.max(0.7, 1.0 - (player.ratings.stamina - 50) / 200);
+  baseFatigue *= staminaMultiplier;
+  
+  // Game intensity (playoffs, overtime, etc.)
+  baseFatigue *= gameIntensity;
+  
+  // Personality affects fatigue - competitive players push harder
+  if (player.personalityTraits?.competitiveness > 85) {
+    baseFatigue *= 1.1; // Push through fatigue
+  }
+  if (player.personalityTraits?.workEthic > 90) {
+    baseFatigue *= 1.05; // Always giving 100%
+  }
+  
+  // Health affects fatigue recovery
+  if (player.health < 80) {
+    baseFatigue *= 1.2;
+  }
+  
+  return Math.round(baseFatigue);
+};
+
+// Rest and recovery options with different effectiveness
+const REST_OPTIONS = {
+  light_practice: {
+    name: "Light Practice",
+    energyGain: 8,
+    cost: 0,
+    duration: 1, // days
+    description: "Low-intensity workout maintains fitness",
+    moraleEffect: 1
+  },
+  full_rest: {
+    name: "Full Rest Day",
+    energyGain: 15,
+    cost: 0,
+    duration: 1,
+    description: "Complete rest to recover energy",
+    moraleEffect: 2
+  },
+  massage_therapy: {
+    name: "Massage Therapy",
+    energyGain: 12,
+    cost: 5,
+    duration: 1,
+    description: "Professional massage speeds recovery",
+    moraleEffect: 3
+  },
+  spa_treatment: {
+    name: "Spa Treatment",
+    energyGain: 18,
+    cost: 15,
+    duration: 1,
+    description: "Luxury spa day for full rejuvenation",
+    moraleEffect: 5
+  },
+  vacation: {
+    name: "Mini Vacation",
+    energyGain: 25,
+    cost: 30,
+    duration: 2,
+    description: "Short getaway for complete reset",
+    moraleEffect: 8
+  }
+};
+
+// Load management strategies for veteran players
+const shouldLoadManage = (player) => {
+  if (player.age < 30) return false;
+  
+  let loadManageChance = 0;
+  
+  // Age factor
+  if (player.age >= 30) loadManageChance += 0.05;
+  if (player.age >= 33) loadManageChance += 0.10;
+  if (player.age >= 36) loadManageChance += 0.15;
+  
+  // Star players get more rest
+  if (player.ratings.overall >= 90) loadManageChance += 0.08;
+  if (player.ratings.overall >= 95) loadManageChance += 0.12;
+  
+  // Energy level
+  if (player.energy < 60) loadManageChance += 0.15;
+  if (player.energy < 40) loadManageChance += 0.25;
+  
+  // Recent games played
+  const recentGames = player.stats.games || 0;
+  if (recentGames >= 5) loadManageChance += 0.05;
+  if (recentGames >= 8) loadManageChance += 0.10;
+  
+  // Injury history increases load management
+  if (player.injuryHistory && player.injuryHistory.length > 3) {
+    loadManageChance += 0.08;
+  }
+  
+  return chance(Math.min(0.35, loadManageChance)); // Cap at 35%
+};
+
+// Calculate back-to-back fatigue penalty
+const getBackToBackPenalty = (player, gamesInLastDays = 1) => {
+  if (gamesInLastDays <= 1) return 1.0;
+  
+  let penalty = 1.0;
+  
+  // Back-to-back games
+  if (gamesInLastDays >= 2) penalty += 0.3;
+  
+  // Three games in four days
+  if (gamesInLastDays >= 3) penalty += 0.5;
+  
+  // Age makes back-to-backs harder
+  if (player.age >= 30) penalty += 0.1;
+  if (player.age >= 35) penalty += 0.2;
+  
+  return penalty;
+};
+
+// Energy recovery during offseason and rest periods
+const processEnergyRecovery = (player, restType = "natural") => {
+  let recovery = 0;
+  
+  switch (restType) {
+    case "natural":
+      recovery = 3 + rnd(1, 3); // Natural daily recovery
+      break;
+    case "offseason":
+      recovery = 5 + rnd(2, 5); // Better offseason recovery
+      break;
+    case "vacation":
+      recovery = 8 + rnd(3, 7); // Excellent vacation recovery
+      break;
+    default:
+      recovery = 2;
+  }
+  
+  // Age affects recovery
+  if (player.age >= 30) recovery *= 0.9;
+  if (player.age >= 35) recovery *= 0.8;
+  
+  // Health affects recovery
+  if (player.health < 70) recovery *= 0.8;
+  
+  // Stamina rating affects recovery
+  recovery *= (0.8 + (player.ratings.stamina / 250));
+  
+  player.energy = clamp(player.energy + Math.round(recovery), 0, 100);
+  
+  return Math.round(recovery);
+};
+
+// Fatigue affects performance in multiple ways
+const getFatiguePerformanceModifier = (player) => {
+  const fatigueLevel = getFatigueLevel(player.energy);
+  let modifier = fatigueLevel.performanceMultiplier;
+  
+  // Additional specific effects based on energy
+  if (player.energy < 30) {
+    // Severely fatigued - major impacts
+    modifier *= 0.92; // Additional 8% penalty
+  } else if (player.energy < 50) {
+    // Moderately fatigued
+    modifier *= 0.96; // Additional 4% penalty
+  }
+  
+  return modifier;
+};
+
+// Smart minutes distribution based on fatigue
+const getOptimalMinutes = (player, gameImportance = 1.0) => {
+  const fatigueLevel = getFatigueLevel(player.energy);
+  let baseMinutes = 32; // Standard starter minutes
+  
+  // Adjust based on fatigue level
+  switch (fatigueLevel.key) {
+    case "fresh": baseMinutes = 36; break;
+    case "good": baseMinutes = 34; break;
+    case "tired": baseMinutes = 30; break;
+    case "fatigued": baseMinutes = 25; break;
+    case "exhausted": baseMinutes = 18; break;
+  }
+  
+  // Game importance can override fatigue concerns
+  if (gameImportance > 1.2) { // Playoff games
+    baseMinutes = Math.min(baseMinutes + 4, 42);
+  }
+  
+  // Star players play more minutes
+  if (player.ratings.overall >= 90) baseMinutes += 2;
+  if (player.ratings.overall >= 95) baseMinutes += 4;
+  
+  return Math.max(12, Math.min(45, baseMinutes));
+};
+
 // Global championship tracking
 const CHAMPIONSHIP_WINNERS = {};
 const fmt = (n, d = 1) => Number(n).toFixed(d);
@@ -2089,6 +2311,7 @@ function newPlayer(custom){
       teamBonding: irnd(40, 70),       // Overall team feeling
       lastUpdated: 0                   // Relationship update tracking
     },
+    energy: irnd(75, 95),               // Fatigue management system
     injuryHistory: [],                  // Comprehensive injury tracking
     currentInjury: null,                // Active injury details
     injurySusceptibility: {},           // Calculated injury risks
@@ -2959,6 +3182,66 @@ export default function BasketballLife(){
     pushToast(`${type} training (${intensity}x) applied`);
   }
 
+  // Fatigue management and rest functions
+  function takeRest(restType) {
+    setGame(prev => {
+      const p = deepClone(prev);
+      const restOption = REST_OPTIONS[restType];
+      
+      if (!restOption) {
+        pushToast("Invalid rest option");
+        return p;
+      }
+      
+      // Ensure cash is valid before checking/spending
+      if (isNaN(p.cash)) p.cash = 0;
+      
+      if (p.cash >= restOption.cost) {
+        p.cash -= restOption.cost;
+        if (isNaN(p.cash)) p.cash = 0;
+        
+        // Apply rest benefits
+        p.energy = clamp(p.energy + restOption.energyGain, 0, 100);
+        p.morale = clamp(p.morale + restOption.moraleEffect, 0, 100);
+        
+        // Some rest options also boost health
+        if (restType === "spa_treatment" || restType === "vacation") {
+          p.health = clamp(p.health + 5, 0, 100);
+        }
+        
+        // Update peak slightly
+        if (restType === "vacation") {
+          p.peak = clamp(p.peak + 3, 0, 100);
+        }
+        
+        p.career.timeline.push(event("Rest", `${restOption.name}: ${restOption.description} (${restOption.cost > 0 ? `-$${restOption.cost}k` : 'Free'})`));
+        pushToast(`${restOption.name} completed! +${restOption.energyGain} energy`);
+      } else {
+        pushToast(`Not enough cash for ${restOption.name} ($${restOption.cost}k needed)`);
+      }
+      
+      return p;
+    });
+  }
+
+  function autoFatigueManagement() {
+    setGame(prev => {
+      const p = deepClone(prev);
+      
+      // Automatic daily energy recovery
+      const recovery = processEnergyRecovery(p, "natural");
+      
+      // Smart load management suggestions
+      const fatigueLevel = getFatigueLevel(p.energy);
+      if (fatigueLevel.key === "exhausted" || fatigueLevel.key === "fatigued") {
+        // Auto-suggest rest
+        p.career.timeline.push(event("Fatigue", `Energy level: ${fatigueLevel.name} (${p.energy}/100) - Consider rest`));
+      }
+      
+      return p;
+    });
+  }
+
   function actHealth(type){
     setGame(prev=>{
       const p = deepClone(prev);
@@ -3539,6 +3822,14 @@ export default function BasketballLife(){
 
     // Passive peak decay & social media growth - gradual peak decay
     p.peak = clamp(p.peak - 1, 0, 100); // Only 1 point per week instead of 4
+    
+    // Natural energy recovery between games
+    if (p.phase !== "Playoffs") { // Less recovery during intense playoff schedule
+      const recovery = processEnergyRecovery(p, p.phase === "Offseason" ? "offseason" : "natural");
+    }
+    
+    // Auto-fatigue management suggestions
+    autoFatigueManagement();
     if(chance(0.3)) p.followers += irnd(100, 1000);
     if(chance(0.25)) randomLifeEventSilent(p);
     
@@ -3697,9 +3988,19 @@ export default function BasketballLife(){
       let missReason = "";
       
       // Load management for stars (especially veterans)
-      if (p.ratings.overall >= 85 && p.age >= 30 && chance(0.08)) {
+      if (shouldLoadManage(p)) {
         missGame = true;
         missReason = "Load Management";
+      }
+      
+      // Fatigue-based rest (new system)
+      const fatigueLevel = getFatigueLevel(p.energy);
+      if (fatigueLevel.key === "exhausted" && chance(0.4)) {
+        missGame = true;
+        missReason = "Fatigue Management";
+      } else if (fatigueLevel.key === "fatigued" && chance(0.2)) {
+        missGame = true;
+        missReason = "Rest Day";
       }
       
       // Injury-based rest (more likely with low health)
@@ -3722,21 +4023,34 @@ export default function BasketballLife(){
       
       // Random injuries during games
       if (!missGame && chance(0.03 + (100-p.health)/800 + (p.age-25)/300)) {
-        // Use advanced injury system
+        // Use advanced injury system with fatigue risk
         const susceptibility = calculateInjurySusceptibility(p);
-        const totalSusceptibility = Object.values(susceptibility).reduce((a, b) => a + b, 0);
+        
+        // Fatigue increases injury risk
+        const fatigueLevel = getFatigueLevel(p.energy);
+        const fatigueRiskMultiplier = fatigueLevel.injuryRisk;
+        
+        const adjustedSusceptibility = {};
+        Object.keys(susceptibility).forEach(injuryType => {
+          adjustedSusceptibility[injuryType] = susceptibility[injuryType] * fatigueRiskMultiplier;
+        });
+        
+        const totalSusceptibility = Object.values(adjustedSusceptibility).reduce((a, b) => a + b, 0);
         
         if (chance(totalSusceptibility)) {
           // Weighted selection based on susceptibility
-          const injuryTypes = Object.keys(susceptibility);
-          const weights = Object.values(susceptibility);
+          const injuryTypes = Object.keys(adjustedSusceptibility);
+          const weights = Object.values(adjustedSusceptibility);
           const selectedInjury = weightedPick(injuryTypes, weights);
           
           const injury = generateInjury(p, selectedInjury);
           applyInjuryEffects(p, injury);
           
+          const fatigueNote = fatigueLevel.key === "exhausted" || fatigueLevel.key === "fatigued" ? 
+            " (fatigue contributed)" : "";
+          
           p.career.timeline.push(event("Injury", 
-            `${injury.severity} ${injury.name.toLowerCase()} - out ${injury.gamesOut} games. ${injury.isRecurring ? '(Recurring injury)' : ''}`
+            `${injury.severity} ${injury.name.toLowerCase()} - out ${injury.gamesOut} games. ${injury.isRecurring ? '(Recurring injury)' : ''}${fatigueNote}`
           ));
           
           // Skip games based on injury severity
@@ -3763,8 +4077,16 @@ export default function BasketballLife(){
       // Play the game
       const moraleModifier = getMoralePerformanceModifier(p.morale);
       
+      // Apply fatigue effects to performance
+      const fatigueModifier = getFatiguePerformanceModifier(p);
+      
+      // Calculate optimal minutes based on fatigue
+      const gameImportance = 1.0; // Could be higher for playoffs
+      const optimalMinutes = getOptimalMinutes(p, gameImportance);
+      const actualMinutes = Math.min(optimalMinutes, 36 + rnd(-3, 6)); // Some variance
+      
       // Apply personality training modifier for work ethic
-      let performanceModifier = moraleModifier;
+      let performanceModifier = moraleModifier * fatigueModifier;
       if (p.personalityTraits) {
         const trainingMod = getPersonalityTrainingModifier(p, 'general');
         performanceModifier *= trainingMod;
@@ -3776,6 +4098,18 @@ export default function BasketballLife(){
       performanceModifier *= chemistryBonus;
       
       const perf = playerGameSim(p, performanceModifier);
+      
+      // Scale performance based on actual minutes played
+      const minutesRatio = actualMinutes / 36;
+      Object.keys(perf).forEach(stat => {
+        if (['points', 'rebounds', 'assists', 'steals', 'blocks', 'fgm', 'fga', 'ftm', 'fta'].includes(stat)) {
+          perf[stat] = Math.round(perf[stat] * minutesRatio);
+        }
+      });
+      
+      // Apply game fatigue
+      const gameFatigue = calculateGameFatigue(p, actualMinutes, gameImportance);
+      p.energy = clamp(p.energy - gameFatigue, 0, 100);
       
       // Personality affects shot attempts
       if (p.personalityTraits?.selfishness > 80) {
@@ -6789,6 +7123,131 @@ function TrainingPanel({ game, onTrain, onEndorse, onShoeEndorse, onPremium, end
           border: '1px solid var(--glass-border)'
         }}>
           🏥 Health management reduces injury risk and speeds recovery
+        </div>
+      </div>
+      
+      {/* Fatigue Management & Energy */}
+      <div className="panel panel-content-tight">
+        <h3 style={{marginBottom: '12px', color: 'var(--team-primary)', fontSize: '14px'}}>Energy & Fatigue</h3>
+        
+        {/* Current Energy Level */}
+        {(() => {
+          const fatigueLevel = getFatigueLevel(game.energy);
+          return (
+            <div style={{
+              background: `${fatigueLevel.color}20`,
+              border: `1px solid ${fatigueLevel.color}50`,
+              borderRadius: '8px',
+              padding: '8px 12px',
+              marginBottom: '12px',
+              textAlign: 'center'
+            }}>
+              <div style={{fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '600'}}>
+                ENERGY LEVEL
+              </div>
+              <div style={{fontSize: '16px', fontWeight: 'bold', color: fatigueLevel.color, marginBottom: '4px'}}>
+                {game.energy}/100 - {fatigueLevel.name}
+              </div>
+              <div style={{
+                width: '100%',
+                height: '6px',
+                background: 'var(--glass-border)',
+                borderRadius: '3px',
+                overflow: 'hidden'
+              }}>
+                <div style={{
+                  width: `${game.energy}%`,
+                  height: '100%',
+                  background: fatigueLevel.color,
+                  borderRadius: '3px',
+                  transition: 'width 0.3s ease'
+                }} />
+              </div>
+            </div>
+          );
+        })()}
+        
+        {/* Performance Impact */}
+        {(() => {
+          const performanceMod = getFatiguePerformanceModifier(game);
+          const impactPercent = Math.round((performanceMod - 1) * 100);
+          return (
+            <div style={{
+              background: 'var(--bg-secondary)',
+              borderRadius: '6px',
+              padding: '8px 10px',
+              marginBottom: '12px',
+              border: '1px solid var(--glass-border)'
+            }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '500'}}>
+                  Performance Impact
+                </span>
+                <span style={{
+                  fontSize: '11px', 
+                  fontWeight: 'bold', 
+                  color: impactPercent >= 0 ? '#10b981' : impactPercent > -10 ? '#f59e0b' : '#ef4444'
+                }}>
+                  {impactPercent >= 0 ? '+' : ''}{impactPercent}%
+                </span>
+              </div>
+            </div>
+          );
+        })()}
+        
+        {/* Rest & Recovery Options */}
+        <div style={{marginBottom: '12px'}}>
+          <h4 style={{fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: '600', textTransform: 'uppercase'}}>
+            Recovery Options
+          </h4>
+          <div style={{display: 'grid', gap: '4px'}}>
+            {Object.entries(REST_OPTIONS).slice(0, 4).map(([restType, option]) => (
+              <button
+                key={restType}
+                onClick={() => takeRest(restType)}
+                className="btn btn-team-outline btn-sm"
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '6px 8px',
+                  fontSize: '10px'
+                }}
+              >
+                <span>{option.name}</span>
+                <span style={{color: 'var(--team-primary)'}}>
+                  +{option.energyGain} {option.cost > 0 ? `($${option.cost}k)` : '(Free)'}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+        
+        {/* Premium Recovery */}
+        <div style={{marginBottom: '12px'}}>
+          <button
+            onClick={() => takeRest('vacation')}
+            className="btn btn-secondary btn-sm"
+            style={{width: '100%', fontSize: '11px'}}
+          >
+            Mini Vacation (+25 Energy, $30k)
+          </button>
+        </div>
+        
+        <div style={{
+          fontSize: '10px', 
+          color: 'var(--text-muted)', 
+          textAlign: 'center',
+          background: 'var(--bg-tertiary)',
+          padding: '6px',
+          borderRadius: '4px',
+          border: '1px solid var(--glass-border)'
+        }}>
+          ⚡ Manage energy to optimize performance and reduce injury risk
         </div>
       </div>
       
