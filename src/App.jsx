@@ -25,6 +25,167 @@ const validateMoney = (player) => {
   return player;
 };
 
+// ========== PLAYER MORALE SYSTEM ==========
+
+// Calculate overall morale from individual factors
+const calculateMorale = (player) => {
+  if (!player.moraleFactors) return player.morale || 70;
+  
+  const factors = player.moraleFactors;
+  const weights = {
+    teamPerformance: 0.20,    // 20% - How well team is doing
+    playingTime: 0.15,        // 15% - Minutes per game satisfaction  
+    contractStatus: 0.15,     // 15% - Happy with current contract
+    teamChemistry: 0.12,      // 12% - Relationships with teammates
+    coachRelationship: 0.10,  // 10% - Relationship with coaching staff
+    mediaAttention: 0.08,     // 8% - Press coverage and fan reaction
+    personalLife: 0.08,       // 8% - Family, health, off-court issues
+    roleClarity: 0.05,        // 5% - Clear understanding of team role
+    facilityQuality: 0.04,    // 4% - Training facilities and amenities
+    marketSize: 0.03          // 3% - Playing in desired market size
+  };
+  
+  let totalMorale = 0;
+  Object.keys(weights).forEach(factor => {
+    totalMorale += (factors[factor] || 70) * weights[factor];
+  });
+  
+  // Personality modifiers
+  const personality = player.personalityTraits || {};
+  
+  // Competitive players care more about team performance
+  if (personality.competitiveness > 80 && factors.teamPerformance < 50) {
+    totalMorale -= 10;
+  }
+  
+  // Loyal players are less affected by contract issues
+  if (personality.loyalty > 80 && factors.contractStatus < 60) {
+    totalMorale += 5;
+  }
+  
+  // Selfish players care more about playing time
+  if (personality.selfishness > 70 && factors.playingTime < 60) {
+    totalMorale -= 8;
+  }
+  
+  return Math.round(clamp(totalMorale, 0, 100));
+};
+
+// Update morale based on game events
+const updateMoraleFromEvent = (player, eventType, eventData = {}) => {
+  if (!player.moraleFactors) return;
+  
+  const factors = player.moraleFactors;
+  
+  switch (eventType) {
+    case 'team_win':
+      factors.teamPerformance = clamp(factors.teamPerformance + 2, 0, 100);
+      break;
+    case 'team_loss':
+      factors.teamPerformance = clamp(factors.teamPerformance - 1, 0, 100);
+      break;
+    case 'good_game':
+      factors.playingTime = clamp(factors.playingTime + 3, 0, 100);
+      factors.mediaAttention = clamp(factors.mediaAttention + 2, 0, 100);
+      break;
+    case 'bad_game':
+      factors.mediaAttention = clamp(factors.mediaAttention - 2, 0, 100);
+      break;
+    case 'contract_signed':
+      factors.contractStatus = clamp(factors.contractStatus + eventData.satisfaction || 15, 0, 100);
+      break;
+    case 'contract_dispute':
+      factors.contractStatus = clamp(factors.contractStatus - 10, 0, 100);
+      break;
+    case 'teammate_conflict':
+      factors.teamChemistry = clamp(factors.teamChemistry - 5, 0, 100);
+      break;
+    case 'teammate_bonding':
+      factors.teamChemistry = clamp(factors.teamChemistry + 4, 0, 100);
+      break;
+    case 'coach_praise':
+      factors.coachRelationship = clamp(factors.coachRelationship + 6, 0, 100);
+      break;
+    case 'coach_criticism':
+      factors.coachRelationship = clamp(factors.coachRelationship - 4, 0, 100);
+      break;
+    case 'role_change':
+      factors.roleClarity = clamp(factors.roleClarity + (eventData.positive ? 8 : -6), 0, 100);
+      break;
+    case 'injury':
+      factors.personalLife = clamp(factors.personalLife - 8, 0, 100);
+      break;
+    case 'recovery':
+      factors.personalLife = clamp(factors.personalLife + 5, 0, 100);
+      break;
+  }
+  
+  // Recalculate overall morale
+  player.morale = calculateMorale(player);
+  
+  // Add to morale history
+  if (!player.moraleHistory) player.moraleHistory = [];
+  player.moraleHistory.push({
+    week: player.week,
+    season: player.season,
+    morale: player.morale,
+    event: eventType,
+    data: eventData
+  });
+  
+  // Keep only last 20 morale entries
+  if (player.moraleHistory.length > 20) {
+    player.moraleHistory = player.moraleHistory.slice(-20);
+  }
+};
+
+// Get morale status description
+const getMoraleStatus = (morale) => {
+  if (morale >= 90) return { text: "Ecstatic", color: "#10b981", emoji: "😄" };
+  if (morale >= 80) return { text: "Very Happy", color: "#22c55e", emoji: "😊" };
+  if (morale >= 70) return { text: "Content", color: "#84cc16", emoji: "🙂" };
+  if (morale >= 60) return { text: "Neutral", color: "#eab308", emoji: "😐" };
+  if (morale >= 50) return { text: "Concerned", color: "#f97316", emoji: "😟" };
+  if (morale >= 40) return { text: "Unhappy", color: "#ef4444", emoji: "😠" };
+  return { text: "Miserable", color: "#dc2626", emoji: "😡" };
+};
+
+// Check if morale affects performance
+const getMoralePerformanceModifier = (morale) => {
+  if (morale >= 90) return 1.08;      // +8% performance boost
+  if (morale >= 80) return 1.05;      // +5% performance boost
+  if (morale >= 70) return 1.02;      // +2% performance boost
+  if (morale >= 60) return 1.0;       // No change
+  if (morale >= 50) return 0.98;      // -2% performance penalty
+  if (morale >= 40) return 0.95;      // -5% performance penalty
+  return 0.90;                        // -10% performance penalty
+};
+
+// Generate random morale events during the season
+const generateRandomMoraleEvent = (player) => {
+  if (!player.moraleFactors) return;
+  
+  const events = [
+    { type: 'teammate_bonding', chance: 0.05, message: "Had great chemistry with teammates in practice" },
+    { type: 'teammate_conflict', chance: 0.03, message: "Minor disagreement with teammate" },
+    { type: 'coach_praise', chance: 0.04, message: "Coach praised your work ethic" },
+    { type: 'coach_criticism', chance: 0.02, message: "Coach was critical of recent performance" },
+    { type: 'media_positive', chance: 0.03, message: "Positive media coverage boosted confidence" },
+    { type: 'media_negative', chance: 0.02, message: "Negative media attention was distracting" },
+    { type: 'personal_good', chance: 0.04, message: "Great day with family and friends" },
+    { type: 'personal_stress', chance: 0.02, message: "Personal stress affecting focus" }
+  ];
+  
+  events.forEach(event => {
+    if (chance(event.chance)) {
+      updateMoraleFromEvent(player, event.type);
+      return event.message;
+    }
+  });
+  
+  return null;
+};
+
 // Global championship tracking
 const CHAMPIONSHIP_WINNERS = {};
 const fmt = (n, d = 1) => Number(n).toFixed(d);
@@ -1145,6 +1306,30 @@ function newPlayer(custom){
     firstName, lastName, age, archetype: arch, ratings, potential: clamp(ratings.overall + irnd(4,15), 70, 99),
     appearance,
     morale: 70, health: 100, peak: 90, fame: 5, followers: irnd(1000, 5000), cash: 50, 
+    // Enhanced Morale System
+    moraleFactors: {
+      teamPerformance: 70,    // How well team is doing (wins/losses)
+      playingTime: 70,        // Minutes per game satisfaction
+      contractStatus: 70,     // Happy with current contract
+      teamChemistry: 70,      // Relationships with teammates
+      coachRelationship: 70,  // Relationship with coaching staff
+      mediaAttention: 70,     // Press coverage and fan reaction
+      personalLife: 70,       // Family, health, off-court issues
+      roleClarity: 70,        // Clear understanding of team role
+      facilityQuality: 70,    // Training facilities and amenities
+      marketSize: 70          // Playing in desired market size
+    },
+    moraleHistory: [],        // Track morale changes over time
+    personalityTraits: {
+      competitiveness: irnd(60, 95),    // Desire to win
+      loyalty: irnd(40, 90),            // Team loyalty
+      selfishness: irnd(20, 80),        // Individual vs team focus
+      workEthic: irnd(50, 95),          // Training dedication
+      mediaComfort: irnd(30, 90),       // Comfort with press
+      leadership: irnd(20, 85),         // Natural leadership ability
+      adaptability: irnd(40, 90),       // Adjusting to new situations
+      ambition: irnd(50, 95)            // Career goals and drive
+    },
     endorsements: [], shoeDeals: [], premiumServices: [],
     // New life features
     relationships: { girlfriend: null, relationshipLevel: 0 },
@@ -1315,11 +1500,14 @@ function cryptoRandomId(){
 }
 
 // ---------- Simulation ----------
-function playerGameSim(p){
+function playerGameSim(p, moraleModifier = 1.0){
   // Base minutes depend on peak/health and team strength - much more realistic
   const peakFactor = p.peak / 100;
   const healthFactor = p.health / 100;
   const ageMultiplier = getAgeMultiplier(p.age);
+  
+  // Apply morale modifier to all performance metrics
+  const totalModifier = moraleModifier * ageMultiplier;
   
   // Elite players get MASSIVE consistency bonuses and dominance
   const consistencyFactor = p.ratings.overall >= 95 ? 1.8 : // Elite superstars dominate
@@ -1347,7 +1535,7 @@ function playerGameSim(p){
   const shotsBase = Math.max(4, Math.round(mins * 0.75 * usage)); // Reduced shot rate
   
   // REALISTIC efficiency for elite players - toned down significantly
-  let efficiencyMultiplier = 0.88; // Better starting point but not crazy
+  let efficiencyMultiplier = 0.88 * totalModifier; // Apply morale modifier here
   
   // Much more realistic elite overall rating scaling
   if (p.ratings.overall >= 98) {
@@ -2195,7 +2383,8 @@ export default function BasketballLife(){
         if (avg.pts > 15 && avg.per > 16) baseSuccessRate += 0.15;
         if (p.ratings.overall >= 80) baseSuccessRate += 0.1;
         if (teamInfo && teamInfo.strength >= 75) baseSuccessRate += 0.1; // Good teams extend players
-        if (p.morale >= 70) baseSuccessRate += 0.1;
+        if (p.morale >= 70) baseSuccessRate += 0.15; // Happy players more likely to re-sign
+        if (p.morale >= 85) baseSuccessRate += 0.1; // Very happy players even more likely
         
       } else {
         // New contracts (free agency)
@@ -2227,10 +2416,15 @@ export default function BasketballLife(){
         
         p.cash += Math.round(Math.abs(increase) * 0.15); // Signing bonus
         
+        // Update morale based on contract satisfaction
+        const contractSatisfaction = increase > 0 ? Math.min(20, increase / 10) : 5;
+        updateMoraleFromEvent(p, 'contract_signed', { satisfaction: contractSatisfaction });
+        
         const contractType = isExtension ? "Extension" : "Contract";
         p.career.timeline.push(event(contractType, `${contractType} signed: $${newValue}k/year for ${contractYears} years (${increase > 0 ? '+' : ''}$${increase}k/year).`));
         pushToast(`${contractType} signed: $${newValue}k/year!`);
       } else {
+        updateMoraleFromEvent(p, 'contract_dispute');
         p.morale = clamp(p.morale - (isExtension ? 3 : 6), 0, 100); // Less penalty for failed extensions
         const failureType = isExtension ? "Extension" : "Contract";
         p.career.timeline.push(event(failureType, `${failureType} negotiation rejected by management.`));
@@ -2551,9 +2745,16 @@ export default function BasketballLife(){
         return true;
       });
 
+      // Weekly morale updates and random events
+      const moraleEvent = generateRandomMoraleEvent(p);
+      if (moraleEvent) {
+        p.career.timeline.push(event("Morale", moraleEvent));
+      }
+
       // Weekly tick: chance of minor injury if peak is low
       if(p.peak < 25 && chance(0.15)){ 
         p.health = clamp(p.health - irnd(5,12), 0, 100); 
+        updateMoraleFromEvent(p, 'injury');
         p.career.timeline.push(event("Injury","Minor injury from low peak condition.")); 
       }
 
@@ -2579,8 +2780,10 @@ export default function BasketballLife(){
           p.phase = p.stats.playoffs? "Playoffs" : "Offseason";
           p.week = 1;
           if(p.stats.playoffs) {
+            updateMoraleFromEvent(p, 'team_win', { significance: 'playoffs' });
             p.career.timeline.push(event("Playoffs", `Your team (#${teamStanding} seed) clinched a playoff berth!`));
           } else {
+            updateMoraleFromEvent(p, 'team_loss', { significance: 'missed_playoffs' });
             p.career.timeline.push(event("Season End", `Season ended. Team finished #${teamStanding} in standings.`));
           }
         } else { 
@@ -2591,7 +2794,11 @@ export default function BasketballLife(){
         const res = playoffsSim(p, p);
         if(res.champion){ 
           p.stats.champion = true; 
-          if(res.finalsMVP) p.stats.finalsMVP = true; 
+          updateMoraleFromEvent(p, 'team_win', { significance: 'championship' });
+          if(res.finalsMVP) {
+            p.stats.finalsMVP = true;
+            updateMoraleFromEvent(p, 'good_game', { significance: 'finals_mvp' });
+          }
           p.career.timeline.push(event("Championship", res.finalsMVP? "You win the title and Finals MVP!":"You are an NBA champion!")); 
         }
         p.phase = "Offseason"; 
@@ -2685,8 +2892,22 @@ export default function BasketballLife(){
       }
       
       // Play the game
-      const perf = playerGameSim(p);
+      const moraleModifier = getMoralePerformanceModifier(p.morale);
+      const perf = playerGameSim(p, moraleModifier);
       const win = chance(teamWinChance(p, p));
+      
+      // Update morale based on game outcome and performance
+      if (win) {
+        updateMoraleFromEvent(p, 'team_win');
+        if (perf.points >= 25 || perf.assists >= 10 || perf.rebounds >= 12) {
+          updateMoraleFromEvent(p, 'good_game');
+        }
+      } else {
+        updateMoraleFromEvent(p, 'team_loss');
+        if (perf.points < 10 && perf.turnovers >= 4) {
+          updateMoraleFromEvent(p, 'bad_game');
+        }
+      }
       
       // Update season stats
       Object.keys(perf).forEach(k=> {
@@ -4909,6 +5130,76 @@ function HomePanel({ game, avg, onWeek, onEvent, onSocialMedia, onSimMonth, onSi
             <div className="compact-stat-label">Chemistry</div>
             <div className="compact-stat-value">{game.teamChem || 50}</div>
           </div>
+        </div>
+        
+        {/* Enhanced Morale System Display */}
+        <div className="panel panel-content-tight" style={{marginBottom: '12px'}}>
+          <h3 style={{marginBottom: '8px', color: 'var(--team-primary)'}}>
+            Player Morale {getMoraleStatus(game.morale || 70).emoji}
+          </h3>
+          <div style={{display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px'}}>
+            <div className="compact-stat">
+              <div className="compact-stat-label">Overall Morale</div>
+              <div className="compact-stat-value" style={{color: getMoraleStatus(game.morale || 70).color}}>
+                {game.morale || 70} - {getMoraleStatus(game.morale || 70).text}
+              </div>
+            </div>
+            <div style={{
+              flex: 1, 
+              height: '8px', 
+              background: 'rgba(255,255,255,0.1)', 
+              borderRadius: '4px',
+              overflow: 'hidden'
+            }}>
+              <div style={{
+                width: `${game.morale || 70}%`,
+                height: '100%',
+                background: getMoraleStatus(game.morale || 70).color,
+                transition: 'width 0.3s ease'
+              }} />
+            </div>
+          </div>
+          
+          {game.moraleFactors && (
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px', fontSize: '0.8rem'}}>
+              <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                <span>Team Performance:</span> 
+                <span style={{color: game.moraleFactors.teamPerformance >= 70 ? '#10b981' : game.moraleFactors.teamPerformance >= 50 ? '#f59e0b' : '#ef4444'}}>
+                  {game.moraleFactors.teamPerformance}
+                </span>
+              </div>
+              <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                <span>Playing Time:</span> 
+                <span style={{color: game.moraleFactors.playingTime >= 70 ? '#10b981' : game.moraleFactors.playingTime >= 50 ? '#f59e0b' : '#ef4444'}}>
+                  {game.moraleFactors.playingTime}
+                </span>
+              </div>
+              <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                <span>Contract Status:</span> 
+                <span style={{color: game.moraleFactors.contractStatus >= 70 ? '#10b981' : game.moraleFactors.contractStatus >= 50 ? '#f59e0b' : '#ef4444'}}>
+                  {game.moraleFactors.contractStatus}
+                </span>
+              </div>
+              <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                <span>Team Chemistry:</span> 
+                <span style={{color: game.moraleFactors.teamChemistry >= 70 ? '#10b981' : game.moraleFactors.teamChemistry >= 50 ? '#f59e0b' : '#ef4444'}}>
+                  {game.moraleFactors.teamChemistry}
+                </span>
+              </div>
+            </div>
+          )}
+          
+          {game.personalityTraits && (
+            <details style={{marginTop: '8px', fontSize: '0.8rem'}}>
+              <summary style={{cursor: 'pointer', opacity: 0.8}}>Personality Traits</summary>
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px', marginTop: '6px', paddingLeft: '12px'}}>
+                <div>Competitiveness: {game.personalityTraits.competitiveness}</div>
+                <div>Loyalty: {game.personalityTraits.loyalty}</div>
+                <div>Work Ethic: {game.personalityTraits.workEthic}</div>
+                <div>Leadership: {game.personalityTraits.leadership}</div>
+              </div>
+            </details>
+          )}
         </div>
         
         {/* Season Stats */}
