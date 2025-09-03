@@ -186,6 +186,248 @@ const generateRandomMoraleEvent = (player) => {
   return null;
 };
 
+// ========== PLAYER PERSONALITY SYSTEM ==========
+
+// Personality trait definitions with descriptions
+const PERSONALITY_TRAITS = {
+  competitiveness: {
+    name: "Competitiveness",
+    description: "Desire to win and hate losing",
+    lowDesc: "Laid back about wins/losses",
+    highDesc: "Fierce competitor who hates losing"
+  },
+  loyalty: {
+    name: "Loyalty", 
+    description: "Attachment to teams and teammates",
+    lowDesc: "Business-first mentality",
+    highDesc: "Forms deep bonds with organization"
+  },
+  selfishness: {
+    name: "Individual Focus",
+    description: "Personal stats vs team success priority",
+    lowDesc: "Ultimate team player",
+    highDesc: "Focused on personal achievements"
+  },
+  workEthic: {
+    name: "Work Ethic",
+    description: "Dedication to training and improvement", 
+    lowDesc: "Natural talent over hard work",
+    highDesc: "First in gym, last to leave"
+  },
+  mediaComfort: {
+    name: "Media Comfort",
+    description: "Comfort level with press and spotlight",
+    lowDesc: "Avoids media attention",
+    highDesc: "Thrives in the spotlight"
+  },
+  leadership: {
+    name: "Leadership",
+    description: "Natural ability to lead and inspire teammates",
+    lowDesc: "Prefers to follow others",
+    highDesc: "Natural born leader"
+  },
+  adaptability: {
+    name: "Adaptability", 
+    description: "Flexibility with role changes and new situations",
+    lowDesc: "Struggles with change",
+    highDesc: "Embraces new challenges"
+  },
+  ambition: {
+    name: "Ambition",
+    description: "Drive for career advancement and goals",
+    lowDesc: "Content with current situation", 
+    highDesc: "Always striving for more"
+  }
+};
+
+// Generate personality-based actions and events
+const generatePersonalityEvent = (player) => {
+  if (!player.personalityTraits) return null;
+  
+  const traits = player.personalityTraits;
+  const events = [];
+  
+  // Competitive players react strongly to losses
+  if (traits.competitiveness > 80 && player.stats.losses > player.stats.wins) {
+    events.push({
+      type: 'personality_competitive_loss',
+      message: "Frustrated by team's losing record, spent extra hours in gym",
+      effect: () => {
+        updateMoraleFromEvent(player, 'coach_criticism');
+        player.peak = clamp(player.peak + 3, 0, 100); // Work harder
+      }
+    });
+  }
+  
+  // High work ethic players train harder
+  if (traits.workEthic > 85 && chance(0.08)) {
+    events.push({
+      type: 'personality_work_ethic', 
+      message: "Extra training session paid off",
+      effect: () => {
+        player.peak = clamp(player.peak + 2, 0, 100);
+        updateMoraleFromEvent(player, 'coach_praise');
+      }
+    });
+  }
+  
+  // Selfish players want more shots
+  if (traits.selfishness > 75) {
+    const avg = seasonAverages(player.stats);
+    if (avg.fga < 15 && chance(0.06)) {
+      events.push({
+        type: 'personality_selfish_shots',
+        message: "Demanded more shot attempts from coaching staff", 
+        effect: () => {
+          updateMoraleFromEvent(player, 'coach_criticism');
+          updateMoraleFromEvent(player, 'teammate_conflict');
+        }
+      });
+    }
+  }
+  
+  // Loyal players defend organization
+  if (traits.loyalty > 85 && chance(0.05)) {
+    events.push({
+      type: 'personality_loyalty',
+      message: "Defended team in media interview",
+      effect: () => {
+        updateMoraleFromEvent(player, 'media_positive');
+        player.fame = clamp(player.fame + 2, 0, 100);
+      }
+    });
+  }
+  
+  // Media-comfortable players get more attention
+  if (traits.mediaComfort > 80 && chance(0.07)) {
+    events.push({
+      type: 'personality_media',
+      message: "Charismatic interview went viral on social media",
+      effect: () => {
+        updateMoraleFromEvent(player, 'media_positive');
+        player.followers = Math.round(player.followers * 1.1);
+        player.fame = clamp(player.fame + 3, 0, 100);
+      }
+    });
+  }
+  
+  // Leadership players help teammates
+  if (traits.leadership > 80 && chance(0.06)) {
+    events.push({
+      type: 'personality_leadership',
+      message: "Mentored younger teammates during practice",
+      effect: () => {
+        updateMoraleFromEvent(player, 'teammate_bonding');
+        player.teamChem = clamp(player.teamChem + 4, 0, 100);
+      }
+    });
+  }
+  
+  if (events.length === 0) return null;
+  
+  const selectedEvent = pick(events);
+  selectedEvent.effect();
+  return selectedEvent.message;
+};
+
+// Personality affects contract negotiations
+const getPersonalityContractModifier = (player, offerIncrease) => {
+  if (!player.personalityTraits) return 1.0;
+  
+  const traits = player.personalityTraits;
+  let modifier = 1.0;
+  
+  // Loyal players accept lower offers
+  if (traits.loyalty > 80) {
+    modifier += 0.15; // 15% more likely to accept
+  } else if (traits.loyalty < 40) {
+    modifier -= 0.1; // Less likely to stay
+  }
+  
+  // Ambitious players want big raises
+  if (traits.ambition > 85 && offerIncrease < 1.2) {
+    modifier -= 0.2; // Much less likely to accept small raises
+  }
+  
+  // Selfish players care about money
+  if (traits.selfishness > 75) {
+    modifier -= 0.1; // Want to be paid well
+  }
+  
+  // Team players care less about money
+  if (traits.selfishness < 30) {
+    modifier += 0.1; // More likely to take team-friendly deals
+  }
+  
+  return clamp(modifier, 0.3, 1.8);
+};
+
+// Personality affects teammate relationships  
+const getPersonalityTeamChemistry = (player) => {
+  if (!player.personalityTraits) return 0;
+  
+  const traits = player.personalityTraits;
+  let chemBonus = 0;
+  
+  // Leadership helps team chemistry
+  if (traits.leadership > 80) chemBonus += 5;
+  else if (traits.leadership < 30) chemBonus -= 2;
+  
+  // Selfishness hurts chemistry
+  if (traits.selfishness > 80) chemBonus -= 4;
+  else if (traits.selfishness < 30) chemBonus += 3;
+  
+  // Work ethic inspires others
+  if (traits.workEthic > 85) chemBonus += 2;
+  
+  // Adaptability helps with role changes
+  if (traits.adaptability > 80) chemBonus += 2;
+  else if (traits.adaptability < 30) chemBonus -= 3;
+  
+  return chemBonus;
+};
+
+// Get personality description
+const getPersonalityDescription = (trait, value) => {
+  const traitInfo = PERSONALITY_TRAITS[trait];
+  if (!traitInfo) return "";
+  
+  if (value >= 90) return `Extremely ${traitInfo.highDesc.toLowerCase()}`;
+  if (value >= 80) return `Very ${traitInfo.highDesc.toLowerCase()}`;
+  if (value >= 70) return `${traitInfo.highDesc}`;
+  if (value >= 60) return `Somewhat ${traitInfo.highDesc.toLowerCase()}`;
+  if (value >= 40) return `Balanced ${traitInfo.name.toLowerCase()}`;
+  if (value >= 30) return `Somewhat ${traitInfo.lowDesc.toLowerCase()}`;
+  if (value >= 20) return `${traitInfo.lowDesc}`;
+  if (value >= 10) return `Very ${traitInfo.lowDesc.toLowerCase()}`;
+  return `Extremely ${traitInfo.lowDesc.toLowerCase()}`;
+};
+
+// Personality affects training effectiveness
+const getPersonalityTrainingModifier = (player, trainingType) => {
+  if (!player.personalityTraits) return 1.0;
+  
+  const traits = player.personalityTraits;
+  let modifier = 1.0;
+  
+  // Work ethic affects all training
+  if (traits.workEthic > 90) modifier += 0.25;
+  else if (traits.workEthic > 80) modifier += 0.15;
+  else if (traits.workEthic > 70) modifier += 0.1;
+  else if (traits.workEthic < 40) modifier -= 0.15;
+  else if (traits.workEthic < 30) modifier -= 0.25;
+  
+  // Competitive players train harder when losing
+  if (traits.competitiveness > 80 && player.stats.losses > player.stats.wins) {
+    modifier += 0.1;
+  }
+  
+  // Ambitious players train harder
+  if (traits.ambition > 85) modifier += 0.08;
+  
+  return clamp(modifier, 0.5, 2.0);
+};
+
 // Global championship tracking
 const CHAMPIONSHIP_WINNERS = {};
 const fmt = (n, d = 1) => Number(n).toFixed(d);
@@ -2106,6 +2348,19 @@ export default function BasketballLife(){
         // Easier training gains for more enjoyable progression
         let baseBoost = 0.25 + rnd(0, 0.35); // Increased from 0.18-0.46 to 0.25-0.60
         
+        // Apply personality training modifier
+        if (p.personalityTraits) {
+          const personalityMod = getPersonalityTrainingModifier(p, type);
+          baseBoost *= personalityMod;
+          
+          // Add personality-based timeline events
+          if (personalityMod > 1.2) {
+            p.career.timeline.push(event("Personality", "High work ethic led to exceptional training session"));
+          } else if (personalityMod < 0.8) {
+            p.career.timeline.push(event("Personality", "Lacks motivation in training"));
+          }
+        }
+        
         // More lenient age penalty for training
         if (p.age >= 25) baseBoost *= 0.98; // Reduced penalty
         if (p.age >= 28) baseBoost *= 0.95; // Reduced penalty
@@ -2402,7 +2657,16 @@ export default function BasketballLife(){
       
       const finalSuccessRate = Math.max(0.1, Math.min(0.9, baseSuccessRate));
       
-      if(chance(finalSuccessRate)){ 
+      // Apply personality effects to contract negotiations
+      let personalityMod = 1.0;
+      if (p.personalityTraits) {
+        const increaseRatio = newValue / currentValue;
+        personalityMod = getPersonalityContractModifier(p, increaseRatio);
+      }
+      
+      const personalityAdjustedRate = finalSuccessRate * personalityMod;
+      
+      if(chance(personalityAdjustedRate)){ 
         const increase = newValue - currentValue;
         const contractYears = isExtension ? (p.contract.years - p.contract.year + irnd(2, 4)) : irnd(2, 5);
         
@@ -2893,7 +3157,25 @@ export default function BasketballLife(){
       
       // Play the game
       const moraleModifier = getMoralePerformanceModifier(p.morale);
-      const perf = playerGameSim(p, moraleModifier);
+      
+      // Apply personality training modifier for work ethic
+      let performanceModifier = moraleModifier;
+      if (p.personalityTraits) {
+        const trainingMod = getPersonalityTrainingModifier(p, 'general');
+        performanceModifier *= trainingMod;
+      }
+      
+      const perf = playerGameSim(p, performanceModifier);
+      
+      // Personality affects shot attempts
+      if (p.personalityTraits?.selfishness > 80) {
+        perf.fga = Math.round(perf.fga * 1.15); // Selfish players shoot more
+        perf.fgm = Math.round(perf.fgm * 1.05); // Slight efficiency decrease
+      } else if (p.personalityTraits?.selfishness < 30) {
+        perf.fga = Math.round(perf.fga * 0.85); // Team players shoot less
+        perf.assists = Math.round(perf.assists * 1.1); // But pass more
+      }
+      
       const win = chance(teamWinChance(p, p));
       
       // Update morale based on game outcome and performance
@@ -2907,6 +3189,17 @@ export default function BasketballLife(){
         if (perf.points < 10 && perf.turnovers >= 4) {
           updateMoraleFromEvent(p, 'bad_game');
         }
+        
+        // Competitive players get extra frustrated by losses
+        if (p.personalityTraits?.competitiveness > 85) {
+          updateMoraleFromEvent(p, 'coach_criticism');
+        }
+      }
+      
+      // Generate personality events during games
+      const personalityEvent = generatePersonalityEvent(p);
+      if (personalityEvent) {
+        p.career.timeline.push(event("Personality", personalityEvent));
       }
       
       // Update season stats
@@ -5513,6 +5806,95 @@ function TrainingPanel({ game, onTrain, onEndorse, onShoeEndorse, onPremium, end
           💡 Train lower ratings for maximum improvement
         </div>
       </div>
+      
+      {/* Player Personality */}
+      {game.personalityTraits && (
+        <div className="panel panel-content-tight">
+          <h3 style={{marginBottom: '12px', color: 'var(--team-primary)', fontSize: '14px'}}>Personality Profile</h3>
+          
+          <div style={{marginBottom: '12px'}}>
+            <div style={{
+              display: 'grid',
+              gap: '6px',
+              gridTemplateColumns: '1fr'
+            }}>
+              {Object.entries(game.personalityTraits).map(([trait, value]) => {
+                const traitInfo = PERSONALITY_TRAITS[trait];
+                if (!traitInfo) return null;
+                
+                const getColor = (val) => {
+                  if (val >= 80) return '#10b981'; // Green for high
+                  if (val >= 60) return '#f59e0b'; // Yellow for medium-high 
+                  if (val >= 40) return '#6b7280'; // Gray for balanced
+                  if (val >= 20) return '#f59e0b'; // Yellow for medium-low
+                  return '#ef4444'; // Red for low
+                };
+                
+                const getBarWidth = (val) => `${val}%`;
+                
+                return (
+                  <div key={trait} style={{
+                    padding: '6px 8px',
+                    background: 'var(--bg-secondary)',
+                    borderRadius: '6px',
+                    border: '1px solid var(--glass-border)'
+                  }}>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '3px'
+                    }}>
+                      <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '500'}}>
+                        {traitInfo.name}
+                      </span>
+                      <span style={{fontSize: '11px', fontWeight: 'bold', color: getColor(value)}}>
+                        {value}
+                      </span>
+                    </div>
+                    <div style={{
+                      width: '100%',
+                      height: '3px',
+                      background: 'var(--glass-border)',
+                      borderRadius: '2px',
+                      overflow: 'hidden'
+                    }}>
+                      <div style={{
+                        width: getBarWidth(value),
+                        height: '100%',
+                        background: getColor(value),
+                        borderRadius: '2px',
+                        transition: 'width 0.3s ease'
+                      }} />
+                    </div>
+                    <div style={{
+                      fontSize: '9px',
+                      color: 'var(--text-muted)',
+                      marginTop: '2px',
+                      fontStyle: 'italic'
+                    }}>
+                      {getPersonalityDescription(trait, value)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          
+          <div style={{
+            fontSize: '10px', 
+            color: 'var(--text-muted)', 
+            textAlign: 'center',
+            background: 'var(--bg-tertiary)',
+            padding: '6px',
+            borderRadius: '4px',
+            border: '1px solid var(--glass-border)'
+          }}>
+            🧠 Personality affects training, contracts, and team chemistry
+          </div>
+        </div>
+      )}
+      
       {/* Training Programs */}
       <div className="panel panel-content-tight">
         <h3 style={{marginBottom: '12px', color: 'var(--team-primary)'}}>Training Programs</h3>
