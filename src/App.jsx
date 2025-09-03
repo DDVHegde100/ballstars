@@ -7,6 +7,17 @@ const rnd = (min = 0, max = 1) => Math.random() * (max - min) + min;
 const irnd = (min, max) => Math.floor(rnd(min, max + 1));
 const chance = (p) => Math.random() < p; // p in [0,1]
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const weightedPick = (items, weights) => {
+  const totalWeight = weights.reduce((a, b) => a + b, 0);
+  let random = Math.random() * totalWeight;
+  
+  for (let i = 0; i < items.length; i++) {
+    random -= weights[i];
+    if (random <= 0) return items[i];
+  }
+  
+  return items[items.length - 1];
+};
 const deepClone = (obj) => {
   const cloned = JSON.parse(JSON.stringify(obj));
   // Protect against NaN and corrupted money values
@@ -654,6 +665,279 @@ const getChemistryMoraleBonus = (player, teammates) => {
   });
   
   return Math.round(totalMoraleBonus);
+};
+
+// ========== INJURY TRACKING SYSTEM ==========
+
+// Injury types with detailed properties
+const INJURY_TYPES = {
+  ankle_sprain: {
+    name: "Ankle Sprain",
+    severity: { minor: [1, 3], moderate: [4, 8], major: [9, 20] },
+    recurrenceRate: 0.25, // 25% chance of reinjury
+    affectedRatings: ['finishing', 'defense'],
+    longTermImpact: { health: -1, peak: -0.5 },
+    commonPositions: ['PG', 'SG', 'SF'],
+    ageMultiplier: 1.2 // Increases with age
+  },
+  knee_injury: {
+    name: "Knee Injury", 
+    severity: { minor: [2, 5], moderate: [6, 12], major: [15, 40] },
+    recurrenceRate: 0.35,
+    affectedRatings: ['finishing', 'rebounding', 'defense'],
+    longTermImpact: { health: -2, peak: -1 },
+    commonPositions: ['C', 'PF'],
+    ageMultiplier: 1.5
+  },
+  back_strain: {
+    name: "Back Strain",
+    severity: { minor: [1, 4], moderate: [5, 10], major: [11, 25] },
+    recurrenceRate: 0.30,
+    affectedRatings: ['shooting', 'rebounding'],
+    longTermImpact: { health: -1, peak: -0.5 },
+    commonPositions: ['C', 'PF', 'SF'],
+    ageMultiplier: 1.8
+  },
+  shoulder_strain: {
+    name: "Shoulder Strain",
+    severity: { minor: [1, 3], moderate: [4, 7], major: [8, 18] },
+    recurrenceRate: 0.20,
+    affectedRatings: ['shooting', 'finishing'],
+    longTermImpact: { health: -0.5, peak: -0.3 },
+    commonPositions: ['SG', 'SF', 'PF'],
+    ageMultiplier: 1.3
+  },
+  hamstring_pull: {
+    name: "Hamstring Pull",
+    severity: { minor: [1, 2], moderate: [3, 6], major: [7, 15] },
+    recurrenceRate: 0.40,
+    affectedRatings: ['finishing', 'defense', 'stamina'],
+    longTermImpact: { health: -1, peak: -0.5 },
+    commonPositions: ['PG', 'SG', 'SF'],
+    ageMultiplier: 1.4
+  },
+  wrist_sprain: {
+    name: "Wrist Sprain",
+    severity: { minor: [1, 2], moderate: [3, 5], major: [6, 12] },
+    recurrenceRate: 0.15,
+    affectedRatings: ['shooting', 'passing'],
+    longTermImpact: { health: -0.3, peak: -0.2 },
+    commonPositions: ['PG', 'SG'],
+    ageMultiplier: 1.1
+  },
+  concussion: {
+    name: "Concussion",
+    severity: { minor: [3, 7], moderate: [8, 15], major: [16, 30] },
+    recurrenceRate: 0.50, // Very high recurrence
+    affectedRatings: ['playmaking', 'leadership'],
+    longTermImpact: { health: -2, peak: -1.5 },
+    commonPositions: ['all'],
+    ageMultiplier: 1.0
+  }
+};
+
+// Calculate injury susceptibility based on player profile
+const calculateInjurySusceptibility = (player) => {
+  if (!player.injuryHistory) return {};
+  
+  const susceptibility = {};
+  
+  Object.keys(INJURY_TYPES).forEach(injuryType => {
+    const injuryData = INJURY_TYPES[injuryType];
+    let baseSusceptibility = 0.02; // 2% base chance
+    
+    // Age factor
+    if (player.age > 30) baseSusceptibility *= injuryData.ageMultiplier;
+    if (player.age > 35) baseSusceptibility *= 1.5;
+    
+    // Previous injury history increases susceptibility
+    const previousInjuries = player.injuryHistory.filter(inj => inj.type === injuryType);
+    if (previousInjuries.length > 0) {
+      baseSusceptibility *= (1 + (previousInjuries.length * injuryData.recurrenceRate));
+    }
+    
+    // Health and peak condition factor
+    if (player.health < 70) baseSusceptibility *= 1.3;
+    if (player.peak < 50) baseSusceptibility *= 1.2;
+    
+    // Position-specific susceptibility
+    if (injuryData.commonPositions.includes(player.position) || 
+        injuryData.commonPositions.includes('all')) {
+      baseSusceptibility *= 1.2;
+    }
+    
+    // Playing style factors (personality affects injury risk)
+    if (player.personalityTraits?.competitiveness > 85) {
+      baseSusceptibility *= 1.1; // Competitive players push through pain
+    }
+    if (player.personalityTraits?.workEthic > 90) {
+      baseSusceptibility *= 1.05; // Overtraining risk
+    }
+    
+    susceptibility[injuryType] = Math.min(0.15, baseSusceptibility); // Cap at 15%
+  });
+  
+  return susceptibility;
+};
+
+// Generate detailed injury with severity and impact
+const generateInjury = (player, injuryType = null) => {
+  const availableTypes = injuryType ? [injuryType] : Object.keys(INJURY_TYPES);
+  const selectedType = pick(availableTypes);
+  const injuryData = INJURY_TYPES[selectedType];
+  
+  // Determine severity based on age, previous injuries, and random chance
+  const severityRoll = Math.random();
+  let severity = 'minor';
+  
+  const previousSameInjuries = player.injuryHistory?.filter(inj => inj.type === selectedType).length || 0;
+  const ageRisk = player.age > 32 ? 0.2 : 0;
+  const historyRisk = previousSameInjuries * 0.15;
+  
+  if (severityRoll > (0.7 - ageRisk - historyRisk)) severity = 'major';
+  else if (severityRoll > (0.4 - ageRisk - historyRisk)) severity = 'moderate';
+  
+  const [minGames, maxGames] = injuryData.severity[severity];
+  const gamesOut = irnd(minGames, maxGames);
+  
+  // Immediate rating impacts
+  const ratingImpact = {};
+  injuryData.affectedRatings.forEach(rating => {
+    const impact = severity === 'major' ? irnd(3, 8) : 
+                   severity === 'moderate' ? irnd(2, 5) : irnd(1, 3);
+    ratingImpact[rating] = -impact;
+  });
+  
+  const injury = {
+    id: cryptoRandomId(),
+    type: selectedType,
+    name: injuryData.name,
+    severity,
+    gamesOut,
+    gamesRemaining: gamesOut,
+    dateSustained: new Date().toISOString(),
+    ratingImpact,
+    longTermImpact: {
+      health: injuryData.longTermImpact.health * (severity === 'major' ? 2 : severity === 'moderate' ? 1.5 : 1),
+      peak: injuryData.longTermImpact.peak * (severity === 'major' ? 2 : severity === 'moderate' ? 1.5 : 1)
+    },
+    isRecurring: previousSameInjuries > 0,
+    recoveryProgress: 0
+  };
+  
+  return injury;
+};
+
+// Apply injury effects to player
+const applyInjuryEffects = (player, injury) => {
+  // Immediate rating decreases
+  Object.entries(injury.ratingImpact).forEach(([rating, impact]) => {
+    player.ratings[rating] = clamp(player.ratings[rating] + impact, 40, 99);
+  });
+  
+  // Immediate health and peak impact
+  player.health = clamp(player.health + injury.longTermImpact.health * 3, 0, 100);
+  player.peak = clamp(player.peak + injury.longTermImpact.peak * 2, 0, 100);
+  
+  // Add to injury history
+  if (!player.injuryHistory) player.injuryHistory = [];
+  player.injuryHistory.push(injury);
+  
+  // Set current injury status
+  player.currentInjury = injury;
+  player.injured = true;
+  player.injuryGames = injury.gamesOut;
+  
+  // Update morale
+  updateMoraleFromEvent(player, 'injury');
+};
+
+// Process injury recovery
+const processInjuryRecovery = (player) => {
+  if (!player.currentInjury) return false;
+  
+  const injury = player.currentInjury;
+  injury.gamesRemaining--;
+  injury.recoveryProgress = ((injury.gamesOut - injury.gamesRemaining) / injury.gamesOut) * 100;
+  
+  if (injury.gamesRemaining <= 0) {
+    // Full recovery
+    player.injured = false;
+    player.injuryGames = 0;
+    player.currentInjury = null;
+    
+    // Gradual rating recovery (not full recovery for major injuries)
+    Object.entries(injury.ratingImpact).forEach(([rating, impact]) => {
+      const recoveryAmount = injury.severity === 'major' ? Math.abs(impact) * 0.7 : 
+                           injury.severity === 'moderate' ? Math.abs(impact) * 0.85 : 
+                           Math.abs(impact);
+      player.ratings[rating] = clamp(player.ratings[rating] + recoveryAmount, 40, 99);
+    });
+    
+    // Mark injury as recovered in history
+    const historyInjury = player.injuryHistory.find(inj => inj.id === injury.id);
+    if (historyInjury) {
+      historyInjury.dateRecovered = new Date().toISOString();
+      historyInjury.recoveryProgress = 100;
+    }
+    
+    updateMoraleFromEvent(player, 'recovery');
+    return true; // Recovered
+  }
+  
+  return false; // Still injured
+};
+
+// Get injury risk assessment for player
+const getInjuryRiskAssessment = (player) => {
+  if (!player.injuryHistory) return { level: 'Low', color: '#10b981' };
+  
+  const recentInjuries = player.injuryHistory.filter(inj => {
+    const injuryDate = new Date(inj.dateSustained);
+    const monthsAgo = (Date.now() - injuryDate.getTime()) / (1000 * 60 * 60 * 24 * 30);
+    return monthsAgo <= 12; // Last 12 months
+  });
+  
+  const totalInjuries = player.injuryHistory.length;
+  const majorInjuries = player.injuryHistory.filter(inj => inj.severity === 'major').length;
+  const recurringInjuries = player.injuryHistory.filter(inj => inj.isRecurring).length;
+  
+  let riskScore = 0;
+  riskScore += recentInjuries.length * 2;
+  riskScore += majorInjuries * 3;
+  riskScore += recurringInjuries * 2;
+  riskScore += Math.max(0, (player.age - 30)) * 0.5;
+  riskScore += Math.max(0, (70 - player.health)) * 0.1;
+  
+  if (riskScore >= 10) return { level: 'Very High', color: '#dc2626' };
+  if (riskScore >= 7) return { level: 'High', color: '#ea580c' };
+  if (riskScore >= 4) return { level: 'Medium', color: '#d97706' };
+  if (riskScore >= 2) return { level: 'Elevated', color: '#ca8a04' };
+  return { level: 'Low', color: '#16a34a' };
+};
+
+// Get career longevity projection based on injury history
+const getCareerLongevityProjection = (player) => {
+  if (!player.injuryHistory) return { projection: 'Excellent', yearsLeft: 8 };
+  
+  const majorInjuries = player.injuryHistory.filter(inj => inj.severity === 'major').length;
+  const totalInjuries = player.injuryHistory.length;
+  const baseYearsLeft = Math.max(0, 40 - player.age);
+  
+  let longevityMultiplier = 1.0;
+  longevityMultiplier -= (majorInjuries * 0.15);
+  longevityMultiplier -= (totalInjuries * 0.05);
+  longevityMultiplier -= Math.max(0, (player.age - 32) * 0.05);
+  
+  const projectedYears = Math.max(1, Math.round(baseYearsLeft * longevityMultiplier));
+  
+  let projection = 'Excellent';
+  if (longevityMultiplier < 0.6) projection = 'Concerning';
+  else if (longevityMultiplier < 0.75) projection = 'Below Average';
+  else if (longevityMultiplier < 0.9) projection = 'Average';
+  else if (longevityMultiplier < 1.0) projection = 'Good';
+  
+  return { projection, yearsLeft: projectedYears, multiplier: longevityMultiplier };
 };
 
 // Global championship tracking
@@ -1805,6 +2089,14 @@ function newPlayer(custom){
       teamBonding: irnd(40, 70),       // Overall team feeling
       lastUpdated: 0                   // Relationship update tracking
     },
+    injuryHistory: [],                  // Comprehensive injury tracking
+    currentInjury: null,                // Active injury details
+    injurySusceptibility: {},           // Calculated injury risks
+    careerLongevity: {                  // Career projection data
+      projection: 'Excellent',
+      projectedYearsLeft: 8,
+      riskFactors: []
+    },
     endorsements: [], shoeDeals: [], premiumServices: [],
     // New life features
     relationships: { girlfriend: null, relationshipLevel: 0 },
@@ -2229,6 +2521,37 @@ function progressAging(p){
   });
   const mainStats = [p.ratings.shooting, p.ratings.finishing, p.ratings.playmaking, p.ratings.defense, p.ratings.rebounding];
   p.ratings.overall = Math.round(mainStats.reduce((a,b)=>a+b,0)/5);
+  
+  // Update injury susceptibility as player ages
+  if (!p.injurySusceptibility) p.injurySusceptibility = {};
+  p.injurySusceptibility = calculateInjurySusceptibility(p);
+  
+  // Update career longevity projection
+  if (!p.careerLongevity) p.careerLongevity = {};
+  const longevityData = getCareerLongevityProjection(p);
+  p.careerLongevity = {
+    projection: longevityData.projection,
+    projectedYearsLeft: longevityData.yearsLeft,
+    lastUpdated: p.season,
+    riskFactors: []
+  };
+  
+  // Add age-related risk factors
+  if (p.age >= 32) p.careerLongevity.riskFactors.push('Advanced age');
+  if (p.injuryHistory && p.injuryHistory.length >= 5) p.careerLongevity.riskFactors.push('Injury history');
+  if (p.health < 70) p.careerLongevity.riskFactors.push('Health concerns');
+  
+  // Apply long-term effects from major injuries
+  if (p.injuryHistory) {
+    const majorInjuries = p.injuryHistory.filter(inj => inj.severity === 'major');
+    majorInjuries.forEach(injury => {
+      // Gradual permanent effects from major injuries
+      if (injury.longTermImpact && chance(0.1)) { // 10% chance per year
+        p.health = clamp(p.health + injury.longTermImpact.health * 0.1, 0, 100);
+        p.peak = clamp(p.peak + injury.longTermImpact.peak * 0.1, 0, 100);
+      }
+    });
+  }
 }
 
 function endSeasonAwards(player, league){
@@ -2661,6 +2984,35 @@ export default function BasketballLife(){
         p.health = clamp(p.health + healthGain, 0, 100);
         p.peak = clamp(p.peak + peakGain, 0, 100);
         p.morale = clamp(p.morale + moraleGain, 0, 100);
+        
+        // Advanced injury recovery acceleration
+        if (p.currentInjury) {
+          let recoveryBoost = 0;
+          switch(type) {
+            case "Diet": recoveryBoost = 0.1; break;
+            case "Gym": recoveryBoost = 0.2; break;
+            case "Cryotherapy": recoveryBoost = 0.5; break;
+          }
+          
+          if (recoveryBoost > 0) {
+            p.currentInjury.recoveryProgress = clamp(
+              p.currentInjury.recoveryProgress + (recoveryBoost * 10), 0, 100
+            );
+            
+            // Accelerate recovery by reducing games remaining
+            const gamesReduced = Math.floor(recoveryBoost * 2);
+            p.currentInjury.gamesRemaining = Math.max(0, p.currentInjury.gamesRemaining - gamesReduced);
+            p.injuryGames = p.currentInjury.gamesRemaining;
+            
+            if (p.currentInjury.gamesRemaining <= 0) {
+              processInjuryRecovery(p);
+            }
+          }
+        }
+        
+        // Update injury susceptibility based on better health
+        p.injurySusceptibility = calculateInjurySusceptibility(p);
+        
         p.career.timeline.push(event("Health", `${type} session completed (-$${cost}k).`));
         pushToast(`${type} completed!`);
       } else {
@@ -3370,17 +3722,37 @@ export default function BasketballLife(){
       
       // Random injuries during games
       if (!missGame && chance(0.03 + (100-p.health)/800 + (p.age-25)/300)) {
-        const injuryType = pick(["ankle sprain", "knee soreness", "back stiffness", "shoulder strain", "hamstring tightness"]);
-        const severity = chance(0.1) ? "major" : "minor";
-        const healthLoss = severity === "major" ? irnd(15, 30) : irnd(5, 15);
-        const gamesOut = severity === "major" ? irnd(3, 12) : irnd(1, 4);
+        // Use advanced injury system
+        const susceptibility = calculateInjurySusceptibility(p);
+        const totalSusceptibility = Object.values(susceptibility).reduce((a, b) => a + b, 0);
         
-        p.health = clamp(p.health - healthLoss, 0, 100);
-        p.career.timeline.push(event("Injury", `${severity} ${injuryType} (-${healthLoss} health, ${gamesOut} games out).`));
-        
-        // Skip games based on injury severity
-        g += gamesOut - 1; // Skip additional games
-        continue;
+        if (chance(totalSusceptibility)) {
+          // Weighted selection based on susceptibility
+          const injuryTypes = Object.keys(susceptibility);
+          const weights = Object.values(susceptibility);
+          const selectedInjury = weightedPick(injuryTypes, weights);
+          
+          const injury = generateInjury(p, selectedInjury);
+          applyInjuryEffects(p, injury);
+          
+          p.career.timeline.push(event("Injury", 
+            `${injury.severity} ${injury.name.toLowerCase()} - out ${injury.gamesOut} games. ${injury.isRecurring ? '(Recurring injury)' : ''}`
+          ));
+          
+          // Skip games based on injury severity
+          g += injury.gamesOut - 1;
+          continue;
+        }
+      }
+      
+      // Process injury recovery for existing injuries
+      if (p.currentInjury) {
+        const recovered = processInjuryRecovery(p);
+        if (recovered) {
+          p.career.timeline.push(event("Recovery", 
+            `Recovered from ${p.injuryHistory[p.injuryHistory.length - 1].name.toLowerCase()}`
+          ));
+        }
       }
       
       if (missGame) {
@@ -6247,6 +6619,178 @@ function TrainingPanel({ game, onTrain, onEndorse, onShoeEndorse, onPremium, end
           </div>
         </div>
       )}
+      
+      {/* Injury Tracking & Health */}
+      <div className="panel panel-content-tight">
+        <h3 style={{marginBottom: '12px', color: 'var(--team-primary)', fontSize: '14px'}}>Injury & Health Profile</h3>
+        
+        {/* Current Injury Status */}
+        {game.currentInjury ? (
+          <div style={{
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            borderRadius: '8px',
+            padding: '8px 12px',
+            marginBottom: '12px'
+          }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '4px'
+            }}>
+              <span style={{fontSize: '12px', fontWeight: 'bold', color: '#ef4444'}}>
+                🏥 {game.currentInjury.name}
+              </span>
+              <span style={{fontSize: '10px', color: '#ef4444', textTransform: 'uppercase'}}>
+                {game.currentInjury.severity}
+              </span>
+            </div>
+            <div style={{fontSize: '10px', color: 'var(--text-secondary)', marginBottom: '6px'}}>
+              {game.currentInjury.gamesRemaining} games remaining • {Math.round(game.currentInjury.recoveryProgress)}% recovered
+            </div>
+            <div style={{
+              width: '100%',
+              height: '4px',
+              background: 'rgba(239, 68, 68, 0.2)',
+              borderRadius: '2px',
+              overflow: 'hidden'
+            }}>
+              <div style={{
+                width: `${game.currentInjury.recoveryProgress}%`,
+                height: '100%',
+                background: '#ef4444',
+                borderRadius: '2px',
+                transition: 'width 0.3s ease'
+              }} />
+            </div>
+          </div>
+        ) : (
+          <div style={{
+            background: 'rgba(16, 185, 129, 0.1)',
+            border: '1px solid rgba(16, 185, 129, 0.3)',
+            borderRadius: '8px',
+            padding: '8px 12px',
+            marginBottom: '12px',
+            textAlign: 'center'
+          }}>
+            <span style={{fontSize: '12px', fontWeight: 'bold', color: '#10b981'}}>
+              ✅ Healthy & Available
+            </span>
+          </div>
+        )}
+        
+        {/* Injury Risk Assessment */}
+        {(() => {
+          const riskAssessment = getInjuryRiskAssessment(game);
+          return (
+            <div style={{
+              background: 'var(--bg-secondary)',
+              borderRadius: '6px',
+              padding: '8px 10px',
+              marginBottom: '12px',
+              border: '1px solid var(--glass-border)'
+            }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '4px'
+              }}>
+                <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '500'}}>
+                  Injury Risk Level
+                </span>
+                <span style={{fontSize: '11px', fontWeight: 'bold', color: riskAssessment.color}}>
+                  {riskAssessment.level}
+                </span>
+              </div>
+            </div>
+          );
+        })()}
+        
+        {/* Career Longevity Projection */}
+        {(() => {
+          const longevity = getCareerLongevityProjection(game);
+          return (
+            <div style={{
+              background: 'var(--bg-secondary)',
+              borderRadius: '6px',
+              padding: '8px 10px',
+              marginBottom: '12px',
+              border: '1px solid var(--glass-border)'
+            }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '4px'
+              }}>
+                <span style={{fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '500'}}>
+                  Career Outlook
+                </span>
+                <span style={{fontSize: '11px', fontWeight: 'bold', color: 'var(--text-primary)'}}>
+                  {longevity.projection}
+                </span>
+              </div>
+              <div style={{fontSize: '9px', color: 'var(--text-muted)'}}>
+                ~{longevity.yearsLeft} years remaining
+              </div>
+            </div>
+          );
+        })()}
+        
+        {/* Recent Injury History */}
+        {game.injuryHistory && game.injuryHistory.length > 0 && (
+          <div style={{marginBottom: '12px'}}>
+            <h4 style={{fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: '600', textTransform: 'uppercase'}}>
+              Recent Injuries ({game.injuryHistory.length} total)
+            </h4>
+            <div style={{display: 'grid', gap: '4px', maxHeight: '120px', overflowY: 'auto'}}>
+              {game.injuryHistory.slice(-4).reverse().map((injury, index) => (
+                <div key={injury.id || index} style={{
+                  padding: '6px 8px',
+                  background: 'var(--bg-tertiary)',
+                  borderRadius: '4px',
+                  border: '1px solid var(--glass-border)'
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '2px'
+                  }}>
+                    <span style={{fontSize: '9px', fontWeight: '600', color: 'var(--text-primary)'}}>
+                      {injury.name}
+                    </span>
+                    <span style={{
+                      fontSize: '8px', 
+                      color: injury.severity === 'major' ? '#ef4444' : injury.severity === 'moderate' ? '#f59e0b' : '#10b981',
+                      textTransform: 'uppercase'
+                    }}>
+                      {injury.severity}
+                    </span>
+                  </div>
+                  <div style={{fontSize: '8px', color: 'var(--text-muted)'}}>
+                    {injury.gamesOut} games • {injury.isRecurring ? 'Recurring' : 'First time'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        <div style={{
+          fontSize: '10px', 
+          color: 'var(--text-muted)', 
+          textAlign: 'center',
+          background: 'var(--bg-tertiary)',
+          padding: '6px',
+          borderRadius: '4px',
+          border: '1px solid var(--glass-border)'
+        }}>
+          🏥 Health management reduces injury risk and speeds recovery
+        </div>
+      </div>
       
       {/* Training Programs */}
       <div className="panel panel-content-tight">
