@@ -428,6 +428,234 @@ const getPersonalityTrainingModifier = (player, trainingType) => {
   return clamp(modifier, 0.5, 2.0);
 };
 
+// ========== DYNAMIC PLAYER CHEMISTRY SYSTEM ==========
+
+// Chemistry relationship types and their effects
+const CHEMISTRY_TYPES = {
+  mentor_mentee: {
+    name: "Mentor-Mentee",
+    description: "Veteran guides young player",
+    performanceBonus: 0.05,
+    moraleBonus: 3,
+    condition: (p1, p2) => Math.abs(p1.age - p2.age) >= 8
+  },
+  best_friends: {
+    name: "Best Friends", 
+    description: "Close personal friendship",
+    performanceBonus: 0.08,
+    moraleBonus: 5,
+    condition: (p1, p2) => p1.personalityTraits?.loyalty > 70 && p2.personalityTraits?.loyalty > 70
+  },
+  rivals: {
+    name: "Competitive Rivals",
+    description: "Push each other to be better",
+    performanceBonus: 0.06,
+    moraleBonus: -2,
+    condition: (p1, p2) => p1.personalityTraits?.competitiveness > 85 && p2.personalityTraits?.competitiveness > 85
+  },
+  clash: {
+    name: "Personality Clash",
+    description: "Don't get along well",
+    performanceBonus: -0.04,
+    moraleBonus: -3,
+    condition: (p1, p2) => Math.abs(p1.personalityTraits?.selfishness - p2.personalityTraits?.selfishness) > 50
+  },
+  leadership_duo: {
+    name: "Leadership Duo", 
+    description: "Co-leaders who complement each other",
+    performanceBonus: 0.07,
+    moraleBonus: 4,
+    condition: (p1, p2) => p1.personalityTraits?.leadership > 80 && p2.personalityTraits?.leadership > 80
+  },
+  veteran_presence: {
+    name: "Veteran Presence",
+    description: "Experienced player calms nerves",
+    performanceBonus: 0.03,
+    moraleBonus: 2,
+    condition: (p1, p2) => (p1.age >= 32 && p2.age <= 25) || (p2.age >= 32 && p1.age <= 25)
+  }
+};
+
+// Initialize chemistry relationships for a player
+const initializePlayerChemistry = (player) => {
+  if (!player.chemistry) {
+    player.chemistry = {
+      relationships: {}, // playerId -> relationship data
+      teamBonding: 50,   // Overall team chemistry feeling
+      lastUpdated: 0     // Track when relationships were last updated
+    };
+  }
+};
+
+// Calculate chemistry between two players
+const calculateChemistryMatch = (player1, player2) => {
+  if (!player1.personalityTraits || !player2.personalityTraits) return null;
+  
+  const traits1 = player1.personalityTraits;
+  const traits2 = player2.personalityTraits;
+  
+  // Find the strongest chemistry type that applies
+  let bestMatch = null;
+  let bestScore = 0;
+  
+  Object.entries(CHEMISTRY_TYPES).forEach(([type, info]) => {
+    if (info.condition(player1, player2)) {
+      // Calculate how well this chemistry type fits
+      let score = 1.0;
+      
+      // Add randomness and compatibility factors
+      if (type === 'best_friends') {
+        score += (traits1.loyalty + traits2.loyalty) / 200;
+      } else if (type === 'rivals') {
+        score += Math.abs(traits1.competitiveness - traits2.competitiveness) / 100;
+      } else if (type === 'clash') {
+        score += Math.abs(traits1.selfishness - traits2.selfishness) / 100;
+      }
+      
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = { type, ...info, strength: Math.min(100, score * 80) };
+      }
+    }
+  });
+  
+  return bestMatch;
+};
+
+// Update chemistry relationships over time
+const updatePlayerChemistry = (player, teammates) => {
+  initializePlayerChemistry(player);
+  
+  teammates.forEach(teammate => {
+    if (teammate.id === player.id) return;
+    
+    initializePlayerChemistry(teammate);
+    
+    // Check if relationship already exists
+    let relationship = player.chemistry.relationships[teammate.id];
+    
+    if (!relationship) {
+      // Create new relationship
+      const chemMatch = calculateChemistryMatch(player, teammate);
+      if (chemMatch) {
+        relationship = {
+          type: chemMatch.type,
+          strength: chemMatch.strength,
+          games: 0,
+          events: []
+        };
+        player.chemistry.relationships[teammate.id] = relationship;
+      }
+    }
+    
+    if (relationship) {
+      // Strengthen relationship over time
+      relationship.games += 1;
+      
+      // Chemistry develops faster for compatible personalities
+      const developmentRate = relationship.type === 'clash' ? 0.5 : 1.5;
+      relationship.strength = clamp(
+        relationship.strength + (developmentRate * rnd(0.1, 0.3)), 
+        10, 
+        100
+      );
+      
+      // Generate chemistry events occasionally
+      if (chance(0.05) && relationship.games > 5) {
+        const chemType = CHEMISTRY_TYPES[relationship.type];
+        const event = generateChemistryEvent(player, teammate, chemType);
+        if (event) {
+          relationship.events.push(event);
+          player.career.timeline.push(event("Chemistry", event));
+        }
+      }
+    }
+  });
+};
+
+// Generate chemistry-based events
+const generateChemistryEvent = (player1, player2, chemistryType) => {
+  const events = {
+    mentor_mentee: [
+      `${player1.name} shared valuable experience with ${player2.name}`,
+      `${player2.name} learned new techniques from veteran ${player1.name}`,
+      `Mentorship session between ${player1.name} and ${player2.name} paid off`
+    ],
+    best_friends: [
+      `${player1.name} and ${player2.name} had dinner together, strengthening their bond`,
+      `Close friends ${player1.name} and ${player2.name} worked out together`,
+      `${player1.name} supported ${player2.name} through difficult time`
+    ],
+    rivals: [
+      `Competitive rivalry between ${player1.name} and ${player2.name} intensified`,
+      `${player1.name} and ${player2.name} pushed each other in practice`,
+      `Healthy competition between ${player1.name} and ${player2.name} elevated both players`
+    ],
+    clash: [
+      `Tension between ${player1.name} and ${player2.name} affected practice`,
+      `${player1.name} and ${player2.name} had disagreement about playing style`,
+      `Personality differences created friction between ${player1.name} and ${player2.name}`
+    ],
+    leadership_duo: [
+      `Co-captains ${player1.name} and ${player2.name} led team meeting`,
+      `${player1.name} and ${player2.name} organized team bonding activity`,
+      `Leadership partnership between ${player1.name} and ${player2.name} strengthened`
+    ],
+    veteran_presence: [
+      `Veteran ${player1.name} calmed nerves of rookie ${player2.name}`,
+      `${player2.name} gained confidence from ${player1.name}'s experience`,
+      `${player1.name} shared playoff wisdom with young ${player2.name}`
+    ]
+  };
+  
+  const eventList = events[chemistryType.name.toLowerCase().replace(/[^a-z]/g, '_')] || events[Object.keys(events)[0]];
+  return pick(eventList);
+};
+
+// Get chemistry performance bonus for a player
+const getChemistryPerformanceBonus = (player, teammates) => {
+  if (!player.chemistry?.relationships) return 1.0;
+  
+  let totalBonus = 0;
+  let relationshipCount = 0;
+  
+  teammates.forEach(teammate => {
+    const relationship = player.chemistry.relationships[teammate.id];
+    if (relationship) {
+      const chemType = CHEMISTRY_TYPES[relationship.type];
+      if (chemType) {
+        const strengthMultiplier = relationship.strength / 100;
+        totalBonus += chemType.performanceBonus * strengthMultiplier;
+        relationshipCount++;
+      }
+    }
+  });
+  
+  // Average the bonus across all relationships
+  const avgBonus = relationshipCount > 0 ? totalBonus / relationshipCount : 0;
+  return clamp(1.0 + avgBonus, 0.8, 1.2);
+};
+
+// Get chemistry morale bonus
+const getChemistryMoraleBonus = (player, teammates) => {
+  if (!player.chemistry?.relationships) return 0;
+  
+  let totalMoraleBonus = 0;
+  
+  teammates.forEach(teammate => {
+    const relationship = player.chemistry.relationships[teammate.id];
+    if (relationship) {
+      const chemType = CHEMISTRY_TYPES[relationship.type];
+      if (chemType) {
+        const strengthMultiplier = relationship.strength / 100;
+        totalMoraleBonus += chemType.moraleBonus * strengthMultiplier;
+      }
+    }
+  });
+  
+  return Math.round(totalMoraleBonus);
+};
+
 // Global championship tracking
 const CHAMPIONSHIP_WINNERS = {};
 const fmt = (n, d = 1) => Number(n).toFixed(d);
@@ -1571,6 +1799,11 @@ function newPlayer(custom){
       leadership: irnd(20, 85),         // Natural leadership ability
       adaptability: irnd(40, 90),       // Adjusting to new situations
       ambition: irnd(50, 95)            // Career goals and drive
+    },
+    chemistry: {
+      relationships: {},                // Player relationships
+      teamBonding: irnd(40, 70),       // Overall team feeling
+      lastUpdated: 0                   // Relationship update tracking
     },
     endorsements: [], shoeDeals: [], premiumServices: [],
     // New life features
@@ -3165,6 +3398,11 @@ export default function BasketballLife(){
         performanceModifier *= trainingMod;
       }
       
+      // Apply chemistry bonus (simulate teammates with current player)
+      const mockTeammates = [p]; // In full game would be actual teammates
+      const chemistryBonus = getChemistryPerformanceBonus(p, mockTeammates);
+      performanceModifier *= chemistryBonus;
+      
       const perf = playerGameSim(p, performanceModifier);
       
       // Personality affects shot attempts
@@ -3177,6 +3415,9 @@ export default function BasketballLife(){
       }
       
       const win = chance(teamWinChance(p, p));
+      
+      // Update chemistry relationships
+      updatePlayerChemistry(p, mockTeammates);
       
       // Update morale based on game outcome and performance
       if (win) {
@@ -3195,6 +3436,10 @@ export default function BasketballLife(){
           updateMoraleFromEvent(p, 'coach_criticism');
         }
       }
+      
+      // Add chemistry morale bonus
+      const chemMoraleBonus = getChemistryMoraleBonus(p, mockTeammates);
+      p.morale = clamp(p.morale + chemMoraleBonus * 0.1, 0, 100);
       
       // Generate personality events during games
       const personalityEvent = generatePersonalityEvent(p);
@@ -5891,6 +6136,114 @@ function TrainingPanel({ game, onTrain, onEndorse, onShoeEndorse, onPremium, end
             border: '1px solid var(--glass-border)'
           }}>
             🧠 Personality affects training, contracts, and team chemistry
+          </div>
+        </div>
+      )}
+      
+      {/* Team Chemistry */}
+      {game.chemistry && (
+        <div className="panel panel-content-tight">
+          <h3 style={{marginBottom: '12px', color: 'var(--team-primary)', fontSize: '14px'}}>Team Chemistry</h3>
+          
+          {/* Overall Team Bonding */}
+          <div style={{
+            background: game.chemistry.teamBonding > 70 ? 'rgba(16, 185, 129, 0.1)' : game.chemistry.teamBonding > 40 ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+            border: `1px solid ${game.chemistry.teamBonding > 70 ? 'rgba(16, 185, 129, 0.3)' : game.chemistry.teamBonding > 40 ? 'rgba(245, 158, 11, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+            borderRadius: '8px',
+            padding: '8px 12px',
+            marginBottom: '12px',
+            textAlign: 'center'
+          }}>
+            <div style={{fontSize: '10px', color: 'var(--text-secondary)', fontWeight: '600'}}>TEAM BONDING</div>
+            <div style={{fontSize: '16px', fontWeight: 'bold', color: game.chemistry.teamBonding > 70 ? '#10b981' : game.chemistry.teamBonding > 40 ? '#f59e0b' : '#ef4444'}}>{game.chemistry.teamBonding}</div>
+          </div>
+          
+          {/* Relationship List */}
+          {Object.keys(game.chemistry.relationships).length > 0 ? (
+            <div style={{marginBottom: '12px'}}>
+              <h4 style={{fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: '600', textTransform: 'uppercase'}}>Key Relationships</h4>
+              <div style={{display: 'grid', gap: '6px'}}>
+                {Object.entries(game.chemistry.relationships).slice(0, 3).map(([teammateId, relationship]) => {
+                  const chemType = CHEMISTRY_TYPES[relationship.type];
+                  if (!chemType) return null;
+                  
+                  const getRelationshipColor = (type) => {
+                    if (type === 'best_friends' || type === 'mentor_mentee' || type === 'leadership_duo') return '#10b981';
+                    if (type === 'rivals' || type === 'veteran_presence') return '#f59e0b';
+                    if (type === 'clash') return '#ef4444';
+                    return '#6b7280';
+                  };
+                  
+                  return (
+                    <div key={teammateId} style={{
+                      padding: '6px 8px',
+                      background: 'var(--bg-secondary)',
+                      borderRadius: '6px',
+                      border: '1px solid var(--glass-border)'
+                    }}>
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '2px'
+                      }}>
+                        <span style={{fontSize: '10px', color: getRelationshipColor(relationship.type), fontWeight: '600'}}>
+                          {chemType.name}
+                        </span>
+                        <span style={{fontSize: '10px', color: 'var(--text-secondary)'}}>
+                          {Math.round(relationship.strength)}%
+                        </span>
+                      </div>
+                      <div style={{
+                        fontSize: '9px',
+                        color: 'var(--text-muted)',
+                        fontStyle: 'italic'
+                      }}>
+                        {chemType.description}
+                      </div>
+                      <div style={{
+                        width: '100%',
+                        height: '2px',
+                        background: 'var(--glass-border)',
+                        borderRadius: '1px',
+                        overflow: 'hidden',
+                        marginTop: '3px'
+                      }}>
+                        <div style={{
+                          width: `${relationship.strength}%`,
+                          height: '100%',
+                          background: getRelationshipColor(relationship.type),
+                          borderRadius: '1px',
+                          transition: 'width 0.3s ease'
+                        }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div style={{
+              textAlign: 'center',
+              padding: '12px',
+              fontSize: '10px',
+              color: 'var(--text-muted)',
+              fontStyle: 'italic'
+            }}>
+              No significant relationships yet - play more games to develop chemistry
+            </div>
+          )}
+          
+          <div style={{
+            fontSize: '10px', 
+            color: 'var(--text-muted)', 
+            textAlign: 'center',
+            background: 'var(--bg-tertiary)',
+            padding: '6px',
+            borderRadius: '4px',
+            border: '1px solid var(--glass-border)'
+          }}>
+            🤝 Chemistry develops over time and affects performance
           </div>
         </div>
       )}
