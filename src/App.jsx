@@ -1162,6 +1162,618 @@ const getOptimalMinutes = (player, gameImportance = 1.0) => {
   return Math.max(12, Math.min(45, baseMinutes));
 };
 
+// ========== DRAFT LOTTERY SYSTEM ==========
+
+// NBA Draft Lottery configuration - realistic 2024+ format
+const DRAFT_LOTTERY_CONFIG = {
+  // 14 lottery teams with weighted odds for top 4 picks
+  lotteryTeams: 14,
+  totalCombinations: 1001, // Total ping pong ball combinations
+  ballsPerTeam: {
+    1: 140,  // Worst record gets 140 combinations (14.0% chance)
+    2: 140,  // Second worst also gets 140 (14.0%)
+    3: 140,  // Third worst also gets 140 (14.0%)
+    4: 125,  // Fourth worst gets 125 (12.5%)
+    5: 105,  // 105 combinations (10.5%)
+    6: 90,   // 90 combinations (9.0%)
+    7: 75,   // 75 combinations (7.5%)
+    8: 60,   // 60 combinations (6.0%)
+    9: 45,   // 45 combinations (4.5%)
+    10: 30,  // 30 combinations (3.0%)
+    11: 20,  // 20 combinations (2.0%)
+    12: 15,  // 15 combinations (1.5%)
+    13: 10,  // 10 combinations (1.0%)
+    14: 5    // Best lottery team gets 5 (0.5%)
+  },
+  // Top 4 picks are determined by lottery, picks 5-14 in reverse order of record
+  lotteryPicks: 4
+};
+
+// Generate lottery prospects with detailed scouting reports
+const generateDraftProspects = (draftYear) => {
+  const prospects = [];
+  const positions = ['PG', 'SG', 'SF', 'PF', 'C'];
+  const colleges = ['Duke', 'Kentucky', 'North Carolina', 'UCLA', 'Kansas', 'Arizona', 'Michigan State', 'Villanova', 'Tennessee', 'Auburn', 'Texas', 'Florida', 'Syracuse', 'Indiana', 'Louisville'];
+  const internationalTeams = ['Real Madrid', 'Barcelona', 'Panathinaikos', 'Maccabi Tel Aviv', 'CSKA Moscow', 'Bayern Munich', 'Olympiacos', 'Zalgiris', 'Alba Berlin', 'Valencia'];
+  
+  // Generate 60 prospects (2 rounds of 30 picks)
+  for (let i = 1; i <= 60; i++) {
+    const isInternational = chance(0.25); // 25% international players
+    const age = irnd(18, 22);
+    const position = pick(positions);
+    
+    // Prospect ratings based on draft position (higher picks are better)
+    let overallRange;
+    if (i <= 5) overallRange = [78, 88];      // Elite prospects
+    else if (i <= 14) overallRange = [72, 82]; // Lottery prospects  
+    else if (i <= 30) overallRange = [65, 78]; // First round
+    else if (i <= 45) overallRange = [58, 70]; // Early second round
+    else overallRange = [50, 65];              // Late second round
+    
+    const currentOverall = irnd(overallRange[0], overallRange[1]);
+    const potential = clamp(currentOverall + irnd(5, 20), currentOverall, 95);
+    
+    // Create detailed scouting report
+    const strengths = [];
+    const weaknesses = [];
+    const archetype = pick(Object.keys(ARCHETYPES));
+    const ratings = baseRatings(archetype);
+    
+    // Determine strengths and weaknesses based on ratings
+    Object.entries(ratings).forEach(([skill, rating]) => {
+      if (skill === 'overall') return;
+      if (rating >= 80) strengths.push(skill);
+      if (rating <= 60) weaknesses.push(skill);
+    });
+    
+    const prospect = {
+      id: cryptoRandomId(),
+      name: genName(),
+      age,
+      position,
+      height: getHeightByPosition(position),
+      weight: getWeightByPosition(position),
+      wingspan: generateWingspan(),
+      college: isInternational ? pick(internationalTeams) : pick(colleges),
+      isInternational,
+      currentOverall,
+      potential,
+      ratings,
+      archetype,
+      draftRank: i,
+      projectedPick: i + irnd(-5, 5), // Some variance in projections
+      
+      // Detailed scouting report
+      scoutingReport: {
+        strengths,
+        weaknesses,
+        comparison: generatePlayerComparison(archetype, position),
+        upside: getProspectUpside(potential, currentOverall),
+        concerns: generateProspectConcerns(ratings, age, isInternational),
+        readiness: getProspectReadiness(currentOverall, age),
+        workoutResults: generateWorkoutResults(),
+        character: generateCharacterAssessment(),
+        medicalStatus: generateMedicalReport(),
+        interviewing: generateInterviewNotes()
+      },
+      
+      // Mock draft predictions from different sources
+      mockDrafts: {
+        espn: Math.max(1, i + irnd(-8, 8)),
+        bleacher: Math.max(1, i + irnd(-6, 6)),
+        athletic: Math.max(1, i + irnd(-7, 7)),
+        nbadraft: Math.max(1, i + irnd(-5, 5))
+      },
+      
+      // Advanced analytics
+      analytics: {
+        per: irnd(15, 35),
+        winShares: rnd(0.1, 8.5),
+        playerEfficiency: rnd(-5, 15),
+        usageRate: rnd(15, 35),
+        assistRate: rnd(5, 40),
+        reboundRate: rnd(3, 25),
+        stealRate: rnd(1, 4),
+        blockRate: rnd(0.5, 8)
+      },
+      
+      // Background info
+      background: {
+        hometown: generateHometown(),
+        highSchoolRank: isInternational ? null : irnd(10, 500),
+        familyBackground: generateFamilyBackground(),
+        trainingHistory: generateTrainingHistory(),
+        achievements: generateProspectAchievements(isInternational)
+      }
+    };
+    
+    prospects.push(prospect);
+  }
+  
+  return prospects;
+};
+
+// Helper functions for prospect generation
+const getHeightByPosition = (position) => {
+  const heights = {
+    PG: () => `${irnd(6, 6)}'${irnd(0, 5)}"`,
+    SG: () => `${irnd(6, 6)}'${irnd(2, 8)}"`,
+    SF: () => `${irnd(6, 6)}'${irnd(6, 11)}"`,
+    PF: () => `${irnd(6, 7)}'${irnd(8, 3)}"`,
+    C: () => `${irnd(6, 7)}'${irnd(10, 6)}"`
+  };
+  return heights[position] ? heights[position]() : `6'6"`;
+};
+
+const getWeightByPosition = (position) => {
+  const weights = {
+    PG: () => irnd(175, 200),
+    SG: () => irnd(190, 220),
+    SF: () => irnd(210, 240),
+    PF: () => irnd(230, 260),
+    C: () => irnd(240, 280)
+  };
+  return weights[position] ? weights[position]() : 200;
+};
+
+const generateWingspan = () => {
+  const feet = irnd(6, 7);
+  const inches = irnd(0, 11);
+  return `${feet}'${inches}"`;
+};
+
+const generatePlayerComparison = (archetype, position) => {
+  const comparisons = {
+    Scorer: ['Devin Booker', 'Bradley Beal', 'CJ McCollum', 'Tyler Herro'],
+    Playmaker: ['Chris Paul', 'Darius Garland', 'Trae Young', 'Tyrese Haliburton'],
+    TwoWay: ['Jrue Holiday', 'Mikal Bridges', 'OG Anunoby', 'Derrick White'],
+    Stretch: ['Brook Lopez', 'Myles Turner', 'Lauri Markkanen', 'Bobby Portis'],
+    Slasher: ['Ja Morant', 'Russell Westbrook', 'De\'Aaron Fox', 'Anthony Edwards'],
+    Big: ['Rudy Gobert', 'Clint Capela', 'Jarrett Allen', 'Robert Williams']
+  };
+  return pick(comparisons[archetype] || ['Solid Role Player']);
+};
+
+const getProspectUpside = (potential, current) => {
+  const gap = potential - current;
+  if (gap >= 18) return 'Superstar Ceiling';
+  if (gap >= 12) return 'All-Star Upside';
+  if (gap >= 8) return 'Starter Potential';
+  if (gap >= 5) return 'Role Player Ceiling';
+  return 'Limited Upside';
+};
+
+const generateProspectConcerns = (ratings, age, isInternational) => {
+  const concerns = [];
+  
+  if (ratings.defense < 65) concerns.push('Defensive Questions');
+  if (ratings.shooting < 65) concerns.push('Outside Shot Development');
+  if (ratings.finishing < 70 && ratings.playmaking < 70) concerns.push('Offensive Creation');
+  if (age <= 18) concerns.push('Physical Development Needed');
+  if (age >= 22) concerns.push('Limited Upside Due to Age');
+  if (isInternational) concerns.push('International Adjustment');
+  if (ratings.stamina < 70) concerns.push('Conditioning Questions');
+  if (ratings.leadership < 60) concerns.push('Leadership/Intangibles');
+  
+  return concerns.slice(0, 3); // Limit to 3 main concerns
+};
+
+const getProspectReadiness = (overall, age) => {
+  if (overall >= 75 && age >= 20) return 'NBA Ready';
+  if (overall >= 70) return 'One Year Away';
+  if (overall >= 65) return 'Developmental Project';
+  return 'Raw Prospect';
+};
+
+const generateWorkoutResults = () => {
+  return {
+    verticalLeap: rnd(28, 45),
+    sprintTime: rnd(2.8, 3.4),
+    benchPress: irnd(3, 20),
+    standingReach: rnd(8.5, 9.8),
+    bodyFatPercentage: rnd(4, 12),
+    maxVertical: rnd(32, 48)
+  };
+};
+
+const generateCharacterAssessment = () => {
+  const traits = ['High Motor', 'Team Player', 'Competitive', 'Coachable', 'Professional', 'Leader'];
+  const concerns = ['Attitude Questions', 'Work Ethic Concerns', 'Off-Court Issues', 'Injury History'];
+  
+  const positives = [];
+  const negatives = [];
+  
+  // Add 2-4 positive traits
+  for (let i = 0; i < irnd(2, 4); i++) {
+    const trait = pick(traits);
+    if (!positives.includes(trait)) positives.push(trait);
+  }
+  
+  // Occasionally add concerns (20% chance)
+  if (chance(0.2)) {
+    negatives.push(pick(concerns));
+  }
+  
+  return { positives, negatives };
+};
+
+const generateMedicalReport = () => {
+  const status = ['Clean', 'Minor Concerns', 'Monitoring Required', 'Red Flags'];
+  const currentStatus = pick(status);
+  
+  const details = {
+    Clean: 'No significant medical concerns',
+    'Minor Concerns': 'Minor injury history, low risk',
+    'Monitoring Required': 'Previous injury requires ongoing monitoring',
+    'Red Flags': 'Significant injury concerns affect draft stock'
+  };
+  
+  return {
+    status: currentStatus,
+    details: details[currentStatus],
+    lastPhysical: 'Pre-Draft Physical Completed',
+    clearance: currentStatus === 'Red Flags' ? 'Conditional' : 'Full'
+  };
+};
+
+const generateInterviewNotes = () => {
+  const categories = ['Basketball IQ', 'Competitiveness', 'Communication', 'Maturity', 'Work Ethic'];
+  const notes = {};
+  
+  categories.forEach(category => {
+    const scores = ['Excellent', 'Good', 'Average', 'Below Average', 'Concerning'];
+    notes[category] = pick(scores);
+  });
+  
+  return notes;
+};
+
+const generateHometown = () => {
+  const cities = [
+    'Los Angeles, CA', 'Atlanta, GA', 'Chicago, IL', 'Houston, TX', 'Miami, FL',
+    'New York, NY', 'Philadelphia, PA', 'Detroit, MI', 'Oakland, CA', 'Memphis, TN',
+    'Washington, DC', 'Milwaukee, WI', 'Cleveland, OH', 'Phoenix, AZ', 'Dallas, TX'
+  ];
+  return pick(cities);
+};
+
+const generateFamilyBackground = () => {
+  const backgrounds = [
+    'First in family to play professionally',
+    'Father played college basketball',
+    'Mother was a track athlete',
+    'Brother plays overseas professionally',
+    'Athletic family background',
+    'Parents are educators',
+    'Single parent household',
+    'Immigrant family pursuing American dream',
+    'Military family background',
+    'Working class family sacrificed for basketball'
+  ];
+  return pick(backgrounds);
+};
+
+const generateTrainingHistory = () => {
+  const academies = [
+    'IMG Academy', 'Montverde Academy', 'Oak Hill Academy', 'La Lumiere',
+    'Findlay Prep', 'Brewster Academy', 'Sunrise Christian Academy'
+  ];
+  const trainers = [
+    'Elite Skills Training', 'Pro Training Academy', 'NBA Skills Development',
+    'International Basketball Academy', 'AAU National Program'
+  ];
+  
+  return {
+    academy: chance(0.3) ? pick(academies) : null,
+    trainer: pick(trainers),
+    specializedTraining: chance(0.4) ? 'Shooting specialist training' : null
+  };
+};
+
+const generateProspectAchievements = (isInternational) => {
+  if (isInternational) {
+    const international = [
+      'FIBA U20 Championship',
+      'European Junior League MVP',
+      'Professional league debut at 17',
+      'National team selection',
+      'EuroLeague prospect status'
+    ];
+    return [pick(international)];
+  } else {
+    const collegiate = [
+      'NCAA Tournament Elite Eight',
+      'Conference Player of the Year',
+      'All-American Honorable Mention',
+      'Conference Tournament MVP',
+      'Academic All-American',
+      'Wooden Award Finalist'
+    ];
+    return [pick(collegiate)];
+  }
+};
+
+// Ping pong ball simulation for lottery drawing
+const simulateLotteryDraw = (lotteryTeams, config) => {
+  const results = [];
+  const availableTeams = [...lotteryTeams]; // Teams that can still be selected
+  
+  // Generate all possible 4-ball combinations (simulating ping pong balls)
+  const combinations = [];
+  for (let i = 1; i <= config.totalCombinations; i++) {
+    combinations.push(i);
+  }
+  
+  // Assign combinations to teams based on their draft position
+  const teamCombinations = {};
+  let currentCombination = 1;
+  
+  availableTeams.forEach((team, index) => {
+    const ballCount = config.ballsPerTeam[index + 1];
+    teamCombinations[team.id] = {
+      start: currentCombination,
+      end: currentCombination + ballCount - 1,
+      count: ballCount
+    };
+    currentCombination += ballCount;
+  });
+  
+  // Simulate lottery for top 4 picks
+  for (let pick = 1; pick <= config.lotteryPicks; pick++) {
+    // Draw random combination
+    const drawnCombination = irnd(1, config.totalCombinations);
+    
+    // Find which team owns this combination
+    let selectedTeam = null;
+    for (const team of availableTeams) {
+      const combRange = teamCombinations[team.id];
+      if (drawnCombination >= combRange.start && drawnCombination <= combRange.end) {
+        selectedTeam = team;
+        break;
+      }
+    }
+    
+    if (selectedTeam) {
+      results.push({
+        pick,
+        team: selectedTeam,
+        combination: drawnCombination,
+        probability: (teamCombinations[selectedTeam.id].count / config.totalCombinations * 100).toFixed(1)
+      });
+      
+      // Remove selected team from available teams
+      const teamIndex = availableTeams.indexOf(selectedTeam);
+      availableTeams.splice(teamIndex, 1);
+      
+      // Recalculate combinations for remaining picks
+      if (pick < config.lotteryPicks) {
+        const newCombinations = {};
+        currentCombination = 1;
+        
+        availableTeams.forEach((team, index) => {
+          const originalIndex = lotteryTeams.indexOf(team);
+          const ballCount = config.ballsPerTeam[originalIndex + 1];
+          newCombinations[team.id] = {
+            start: currentCombination,
+            end: currentCombination + ballCount - 1,
+            count: ballCount
+          };
+          currentCombination += ballCount;
+        });
+        
+        Object.assign(teamCombinations, newCombinations);
+      }
+    }
+  }
+  
+  // Assign remaining picks 5-14 in reverse order of record
+  let nextPick = config.lotteryPicks + 1;
+  availableTeams.forEach(team => {
+    results.push({
+      pick: nextPick,
+      team: team,
+      combination: null, // No lottery draw for these picks
+      probability: null
+    });
+    nextPick++;
+  });
+  
+  return results;
+};
+
+// Generate draft lottery teams based on league standings
+const generateLotteryTeams = (game) => {
+  const standings = getStandings(game);
+  
+  // Get bottom 14 teams (non-playoff teams)
+  const lotteryTeams = standings
+    .slice(-14) // Take bottom 14 teams
+    .reverse()  // Worst record first
+    .map((team, index) => ({
+      id: team.team,
+      name: team.name,
+      record: `${team.wins}-${team.losses}`,
+      winPercentage: team.winPct,
+      lotteryPosition: index + 1,
+      odds: {
+        first: (DRAFT_LOTTERY_CONFIG.ballsPerTeam[index + 1] / DRAFT_LOTTERY_CONFIG.totalCombinations * 100).toFixed(1),
+        top4: calculateTop4Odds(index + 1)
+      }
+    }));
+  
+  return lotteryTeams;
+};
+
+// Calculate probability of landing in top 4 for each lottery position
+const calculateTop4Odds = (position) => {
+  const ballCount = DRAFT_LOTTERY_CONFIG.ballsPerTeam[position];
+  const total = DRAFT_LOTTERY_CONFIG.totalCombinations;
+  
+  // Simplified calculation - actual NBA calculation is more complex
+  const singlePickOdds = ballCount / total;
+  const top4Probability = singlePickOdds * 4; // Approximation
+  
+  return Math.min(100, top4Probability * 100).toFixed(1);
+};
+
+// Simulate entire draft lottery event
+const simulateDraftLottery = (game) => {
+  const lotteryTeams = generateLotteryTeams(game);
+  const prospects = generateDraftProspects(getCurrentYear(game.season));
+  
+  // Record pre-lottery odds
+  const preLotteryOdds = lotteryTeams.map(team => ({
+    ...team,
+    expectedPick: team.lotteryPosition <= 4 ? 'Lottery' : team.lotteryPosition
+  }));
+  
+  // Simulate the lottery drawing
+  const lotteryResults = simulateLotteryDraw(lotteryTeams, DRAFT_LOTTERY_CONFIG);
+  
+  // Calculate movement (winners and losers)
+  const lotteryMovement = lotteryResults.map(result => {
+    const originalPosition = result.team.lotteryPosition;
+    const newPosition = result.pick;
+    const movement = originalPosition - newPosition;
+    
+    return {
+      ...result,
+      originalPosition,
+      movement,
+      movementType: movement > 0 ? 'Winner' : movement < 0 ? 'Loser' : 'Stayed'
+    };
+  });
+  
+  // Generate draft order for all 30 teams
+  const fullDraftOrder = [...lotteryResults];
+  
+  // Add playoff teams (picks 15-30) in reverse order of record
+  const playoffTeams = getStandings(game)
+    .slice(0, -14) // Top 16 teams (playoff teams)
+    .reverse()     // Best record gets last pick
+    .slice(0, 16); // Ensure exactly 16 teams
+  
+  let pickNumber = 15;
+  playoffTeams.forEach(team => {
+    fullDraftOrder.push({
+      pick: pickNumber,
+      team: {
+        id: team.team,
+        name: team.name,
+        record: `${team.wins}-${team.losses}`,
+        winPercentage: team.winPct
+      },
+      combination: null,
+      probability: null
+    });
+    pickNumber++;
+  });
+  
+  return {
+    draftYear: getCurrentYear(game.season),
+    preLotteryOdds,
+    lotteryResults: lotteryMovement,
+    fullDraftOrder,
+    prospects: prospects.slice(0, 30), // Only show first round for main display
+    allProspects: prospects,
+    biggestWinners: lotteryMovement
+      .filter(r => r.movement >= 4)
+      .sort((a, b) => b.movement - a.movement),
+    biggestLosers: lotteryMovement
+      .filter(r => r.movement <= -4)
+      .sort((a, b) => a.movement - b.movement),
+    surprises: lotteryMovement.filter(r => Math.abs(r.movement) >= 3),
+    summary: generateLotterySummary(lotteryMovement, game)
+  };
+};
+
+// Generate lottery summary with key storylines
+const generateLotterySummary = (results, game) => {
+  const playerTeam = results.find(r => r.team.id === game.team);
+  const topPick = results.find(r => r.pick === 1);
+  const biggestJump = results.reduce((max, curr) => 
+    curr.movement > max.movement ? curr : max, results[0]);
+  const biggestFall = results.reduce((min, curr) => 
+    curr.movement < min.movement ? curr : min, results[0]);
+  
+  const storylines = [];
+  
+  if (playerTeam) {
+    if (playerTeam.movement > 0) {
+      storylines.push(`🎉 Your ${playerTeam.team.name} moved UP ${playerTeam.movement} spots to pick #${playerTeam.pick}!`);
+    } else if (playerTeam.movement < 0) {
+      storylines.push(`😤 Your ${playerTeam.team.name} dropped ${Math.abs(playerTeam.movement)} spots to pick #${playerTeam.pick}`);
+    } else {
+      storylines.push(`📍 Your ${playerTeam.team.name} stayed at pick #${playerTeam.pick}`);
+    }
+  }
+  
+  if (biggestJump.movement >= 4) {
+    storylines.push(`🚀 Biggest Winner: ${biggestJump.team.name} jumped ${biggestJump.movement} spots!`);
+  }
+  
+  if (biggestFall.movement <= -4) {
+    storylines.push(`💔 Biggest Loser: ${biggestFall.team.name} fell ${Math.abs(biggestFall.movement)} spots`);
+  }
+  
+  storylines.push(`🏆 ${topPick.team.name} wins the #1 overall pick with ${topPick.probability}% odds`);
+  
+  return {
+    headline: `${getCurrentYear(game.season)} NBA Draft Lottery Results`,
+    storylines,
+    playerTeamResult: playerTeam
+  };
+};
+
+// Draft prospect evaluation for teams
+const evaluateProspectFit = (prospect, team, teamNeeds) => {
+  let fitScore = 0;
+  
+  // Position need
+  if (teamNeeds.positions.includes(prospect.position)) fitScore += 20;
+  
+  // Skill needs
+  prospect.scoutingReport.strengths.forEach(strength => {
+    if (teamNeeds.skills.includes(strength)) fitScore += 15;
+  });
+  
+  // Team building approach
+  if (teamNeeds.approach === 'win_now' && prospect.scoutingReport.readiness === 'NBA Ready') {
+    fitScore += 25;
+  } else if (teamNeeds.approach === 'rebuild' && prospect.potential >= 80) {
+    fitScore += 20;
+  }
+  
+  // Character fit
+  if (prospect.scoutingReport.character.negatives.length === 0) fitScore += 10;
+  
+  return Math.min(100, fitScore);
+};
+
+// Generate team draft needs
+const generateTeamDraftNeeds = (teamId) => {
+  const teamStrength = NBA_TEAMS[teamId]?.strength || 70;
+  
+  return {
+    positions: pick([['PG'], ['SG'], ['SF'], ['PF'], ['C'], ['PG', 'SG'], ['SF', 'PF']]),
+    skills: pick([['shooting'], ['defense'], ['playmaking'], ['rebounding'], ['shooting', 'defense']]),
+    approach: teamStrength > 80 ? 'win_now' : teamStrength < 70 ? 'rebuild' : 'balanced',
+    priorities: generateTeamPriorities(teamStrength)
+  };
+};
+
+const generateTeamPriorities = (teamStrength) => {
+  if (teamStrength > 85) {
+    return ['Championship experience', 'Playoff readiness', 'Role player depth'];
+  } else if (teamStrength > 75) {
+    return ['Star potential', 'Two-way ability', 'Leadership'];
+  } else {
+    return ['High upside', 'Franchise cornerstone', 'Foundation building'];
+  }
+};
+
+// ========== END DRAFT LOTTERY SYSTEM ==========
+
 // Global championship tracking
 const CHAMPIONSHIP_WINNERS = {};
 const fmt = (n, d = 1) => Number(n).toFixed(d);
@@ -3020,6 +3632,8 @@ export default function BasketballLife(){
   const [toast, setToast] = useState(null);
   const [awardsPopup, setAwardsPopup] = useState(null);
   const [showImport, setShowImport] = useState(false);
+  const [draftLotteryData, setDraftLotteryData] = useState(null);
+  const [showDraftLottery, setShowDraftLottery] = useState(false);
   const importRef = useRef();
 
   useEffect(()=>{ saveGame(game); }, [game]);
@@ -3383,6 +3997,142 @@ export default function BasketballLife(){
       p.career.timeline.push(event("Shoe Deal", `Signed with ${offer.name} for $${validValue}k`));
       return p;
     });
+  }
+
+  // ========== DRAFT LOTTERY FUNCTIONS ==========
+
+  function conductDraftLottery() {
+    if (game.phase !== "Offseason") {
+      pushToast("Draft lottery can only be conducted during the offseason!");
+      return;
+    }
+
+    const lotteryData = simulateDraftLottery(game);
+    setDraftLotteryData(lotteryData);
+    setShowDraftLottery(true);
+    
+    // Add timeline event for draft lottery
+    setGame(prev => {
+      const p = deepClone(prev);
+      const playerTeamResult = lotteryData.lotteryResults.find(r => r.team.id === p.team);
+      
+      if (playerTeamResult) {
+        const message = playerTeamResult.movement > 0 
+          ? `Draft Lottery: Moved UP ${playerTeamResult.movement} spots to pick #${playerTeamResult.pick}!`
+          : playerTeamResult.movement < 0 
+          ? `Draft Lottery: Dropped ${Math.abs(playerTeamResult.movement)} spots to pick #${playerTeamResult.pick}`
+          : `Draft Lottery: Stayed at pick #${playerTeamResult.pick}`;
+        
+        p.career.timeline.push(event("Draft", message));
+      }
+      
+      // Store draft lottery results in player's league data
+      if (!p.league.draftHistory) p.league.draftHistory = [];
+      p.league.draftHistory.push({
+        year: getCurrentYear(p.season),
+        results: lotteryData.lotteryResults,
+        playerTeamPick: playerTeamResult?.pick || null
+      });
+      
+      return p;
+    });
+
+    pushToast("Draft lottery conducted! Check out the results!");
+  }
+
+  function simulateDraft() {
+    if (!draftLotteryData) {
+      pushToast("Must conduct draft lottery first!");
+      return;
+    }
+
+    const draftResults = [];
+    const prospects = draftLotteryData.allProspects;
+    
+    // Simulate draft picks based on team needs and prospect value
+    draftLotteryData.fullDraftOrder.forEach((draftSlot, index) => {
+      const pickNumber = index + 1;
+      const team = draftSlot.team;
+      
+      // Generate team needs
+      const teamNeeds = generateTeamDraftNeeds(team.id);
+      
+      // Find best available prospect for this team
+      const availableProspects = prospects.filter(p => !p.drafted);
+      let selectedProspect = null;
+      
+      if (availableProspects.length > 0) {
+        // Teams usually pick best available with some positional need consideration
+        const prospectScores = availableProspects.map(prospect => {
+          const fitScore = evaluateProspectFit(prospect, team, teamNeeds);
+          const talentScore = prospect.potential;
+          const overallScore = (fitScore * 0.3) + (talentScore * 0.7) + rnd(-5, 5); // Some randomness
+          
+          return { prospect, score: overallScore };
+        });
+        
+        // Sort by score and pick top prospect
+        prospectScores.sort((a, b) => b.score - a.score);
+        selectedProspect = prospectScores[0].prospect;
+        selectedProspect.drafted = true;
+        selectedProspect.draftedBy = team.id;
+        selectedProspect.actualDraftPick = pickNumber;
+      }
+      
+      draftResults.push({
+        pick: pickNumber,
+        team: team,
+        prospect: selectedProspect,
+        teamNeeds: teamNeeds
+      });
+    });
+
+    // Update game state with draft results
+    setGame(prev => {
+      const p = deepClone(prev);
+      
+      // Store draft results
+      if (!p.league.draftHistory) p.league.draftHistory = [];
+      const currentYear = getCurrentYear(p.season);
+      
+      const existingDraft = p.league.draftHistory.find(d => d.year === currentYear);
+      if (existingDraft) {
+        existingDraft.draftResults = draftResults;
+      } else {
+        p.league.draftHistory.push({
+          year: currentYear,
+          draftResults: draftResults
+        });
+      }
+      
+      // Add timeline event
+      const playerTeamPick = draftResults.find(r => r.team.id === p.team);
+      if (playerTeamPick && playerTeamPick.prospect) {
+        p.career.timeline.push(event("Draft", 
+          `Your team drafted ${playerTeamPick.prospect.name} (${playerTeamPick.prospect.position}) with pick #${playerTeamPick.pick}`));
+      }
+      
+      return p;
+    });
+
+    // Update lottery data with draft results
+    setDraftLotteryData(prev => ({
+      ...prev,
+      draftResults: draftResults,
+      draftCompleted: true
+    }));
+
+    pushToast("Draft simulation completed!");
+  }
+
+  function closeDraftLottery() {
+    setShowDraftLottery(false);
+    setDraftLotteryData(null);
+  }
+
+  function viewProspectDetails(prospect) {
+    // This would open a detailed prospect view - for now just show a toast
+    pushToast(`Viewing details for ${prospect.name} - ${prospect.position} from ${prospect.college}`);
   }
 
   function buyPremiumService(service){
@@ -6045,7 +6795,7 @@ export default function BasketballLife(){
             onRetire={retireNow}
             onAppearanceChange={handleAppearanceChange}
           />
-          <Tabs current={tab} onSelect={setTab} tabs={["Home","Training","Health","Life","Social","Team","Contracts","Awards","History","Analytics","League"]} />
+          <Tabs current={tab} onSelect={setTab} tabs={["Home","Training","Health","Life","Social","Team","Contracts","Awards","History","Analytics","League","Draft"]} />
           
           {tab==="Home" && (
             <HomePanel game={game} avg={avg} onWeek={playNextWeek} onEvent={randomLifeEvent} onSocialMedia={postSocialMedia} onSimMonth={simMonth} onSimSeason={simSeason} />
@@ -6152,6 +6902,14 @@ export default function BasketballLife(){
         <LeaguePanel game={game} />
       )}
 
+      {!game.retired && tab==="Draft" && (
+        <DraftPanel 
+          game={game} 
+          onConductLottery={conductDraftLottery}
+          onSimulateDraft={simulateDraft}
+        />
+      )}
+
       {toast && <Toast text={toast.text} />}
 
         {showImport && (
@@ -6179,6 +6937,15 @@ export default function BasketballLife(){
             champion={awardsPopup.champion}
             finalsMVP={awardsPopup.finalsMVP}
             onClose={() => setAwardsPopup(null)}
+          />
+        )}
+
+        {showDraftLottery && draftLotteryData && (
+          <DraftLotteryModal 
+            lotteryData={draftLotteryData}
+            onClose={closeDraftLottery}
+            onSimulateDraft={simulateDraft}
+            onViewProspect={viewProspectDetails}
           />
         )}
 
@@ -10946,6 +11713,287 @@ function getLegacyColor(score) {
   if (score >= 75) return '#c0c0c0'; // Silver  
   if (score >= 60) return '#cd7f32'; // Bronze
   return '#6b7280'; // Gray
+}
+
+function DraftPanel({ game, onConductLottery, onSimulateDraft, draftLotteryData }) {
+  const currentSeason = game.season;
+  const isEligible = game.postRetirement?.position === 'general_manager' || game.postRetirement?.teamOwnership;
+  
+  if (!isEligible) {
+    return (
+      <div className="panel">
+        <div className="panel-content">
+          <h2>🎯 NBA Draft</h2>
+          <div className="panel" style={{background: 'rgba(239,68,68,0.1)', textAlign: 'center', padding: '2rem'}}>
+            <h3>🚫 Access Restricted</h3>
+            <p>You need to be a General Manager or Team Owner to access the draft lottery system.</p>
+            <p>Complete your playing career and pursue a management position to participate in the draft.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="panel">
+      <div className="panel-content">
+        <h2>🎯 NBA Draft System</h2>
+        
+        <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem', marginTop: '2rem'}}>
+          
+          {/* Draft Lottery Controls */}
+          <div className="panel" style={{background: 'linear-gradient(135deg, rgba(59,130,246,0.1), rgba(147,51,234,0.1))'}}>
+            <h3>🎲 Draft Lottery</h3>
+            <p style={{opacity: 0.8, marginBottom: '1rem'}}>
+              Simulate the NBA Draft Lottery using authentic ping pong ball mechanics and weighted odds.
+            </p>
+            
+            {draftLotteryData ? (
+              <div>
+                <div style={{background: 'rgba(34,197,94,0.2)', padding: '1rem', borderRadius: '8px', marginBottom: '1rem'}}>
+                  <p style={{color: '#22c55e', fontWeight: 'bold'}}>✅ Lottery Complete</p>
+                  <p>Season {currentSeason} Draft Order Set</p>
+                </div>
+                <button 
+                  className="button" 
+                  onClick={onSimulateDraft}
+                  style={{width: '100%', background: 'linear-gradient(135deg, #10b981, #059669)'}}
+                >
+                  🎯 Simulate Draft
+                </button>
+              </div>
+            ) : (
+              <button 
+                className="button" 
+                onClick={onConductLottery}
+                style={{width: '100%', background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)'}}
+              >
+                🎲 Conduct Lottery
+              </button>
+            )}
+          </div>
+
+          {/* Draft Information */}
+          <div className="panel">
+            <h3>📋 Draft Information</h3>
+            <div style={{display: 'grid', gap: '0.5rem'}}>
+              <p><strong>Current Season:</strong> {currentSeason}</p>
+              <p><strong>Draft Year:</strong> {currentSeason}</p>
+              <p><strong>Total Prospects:</strong> 60</p>
+              <p><strong>Lottery Teams:</strong> 14</p>
+              <p><strong>Total Combinations:</strong> 1,001</p>
+            </div>
+            
+            <div style={{marginTop: '1rem', padding: '1rem', background: 'rgba(59,130,246,0.1)', borderRadius: '8px'}}>
+              <h4 style={{margin: '0 0 0.5rem 0'}}>🏀 Lottery Odds</h4>
+              <div style={{fontSize: '0.9rem', opacity: 0.8}}>
+                <p>1st-3rd worst: 14.0% each</p>
+                <p>4th worst: 12.5%</p>
+                <p>5th worst: 10.5%</p>
+                <p>6th-7th worst: 9.0% & 7.5%</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Draft History */}
+          <div className="panel">
+            <h3>📚 Draft History</h3>
+            {game.draftHistory && game.draftHistory.length > 0 ? (
+              <div style={{maxHeight: '300px', overflowY: 'auto'}}>
+                {game.draftHistory.slice(-5).map((draft, idx) => (
+                  <div key={idx} style={{marginBottom: '1rem', padding: '1rem', background: 'rgba(100,100,100,0.1)', borderRadius: '8px'}}>
+                    <p><strong>Season {draft.season}</strong></p>
+                    <p style={{fontSize: '0.9rem', opacity: 0.8}}>
+                      #1 Pick: {draft.firstPick?.name || 'Unknown'}
+                    </p>
+                    <p style={{fontSize: '0.9rem', opacity: 0.8}}>
+                      Lottery Winner: {draft.lotteryWinner || 'Unknown'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{textAlign: 'center', padding: '2rem', opacity: 0.6}}>
+                <p>No draft history available</p>
+                <p style={{fontSize: '0.9rem'}}>Conduct your first draft lottery to begin</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Lottery Results Summary */}
+        {draftLotteryData && (
+          <div className="panel" style={{marginTop: '2rem', background: 'linear-gradient(135deg, rgba(255,215,0,0.1), rgba(255,107,53,0.1))'}}>
+            <h3>🏆 {currentSeason} Lottery Results</h3>
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginTop: '1rem'}}>
+              <div>
+                <h4>🥇 #1 Pick</h4>
+                <p style={{fontSize: '1.2rem', fontWeight: 'bold', color: '#ffd700'}}>
+                  {draftLotteryData.order[0]?.team || 'TBD'}
+                </p>
+              </div>
+              <div>
+                <h4>🥈 #2 Pick</h4>
+                <p style={{fontSize: '1.1rem', fontWeight: 'bold', color: '#c0c0c0'}}>
+                  {draftLotteryData.order[1]?.team || 'TBD'}
+                </p>
+              </div>
+              <div>
+                <h4>🥉 #3 Pick</h4>
+                <p style={{fontSize: '1rem', fontWeight: 'bold', color: '#cd7f32'}}>
+                  {draftLotteryData.order[2]?.team || 'TBD'}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DraftLotteryModal({ draftLotteryData, onClose }) {
+  if (!draftLotteryData) return null;
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: 'rgba(0,0,0,0.8)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000
+    }}>
+      <div style={{
+        background: 'linear-gradient(135deg, #1f2937, #374151)',
+        borderRadius: '12px',
+        padding: '2rem',
+        maxWidth: '90vw',
+        maxHeight: '90vh',
+        overflowY: 'auto',
+        border: '2px solid rgba(255,215,0,0.3)'
+      }}>
+        <div style={{textAlign: 'center', marginBottom: '2rem'}}>
+          <h2 style={{color: '#ffd700', fontSize: '2rem', margin: '0 0 0.5rem 0'}}>
+            🎲 {draftLotteryData.season} NBA Draft Lottery
+          </h2>
+          <p style={{opacity: 0.8}}>Official Results</p>
+        </div>
+
+        {/* Top 3 Picks Showcase */}
+        <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '2rem'}}>
+          {draftLotteryData.order.slice(0, 3).map((pick, idx) => (
+            <div key={idx} style={{
+              background: idx === 0 ? 'linear-gradient(135deg, rgba(255,215,0,0.2), rgba(255,107,53,0.2))' :
+                         idx === 1 ? 'linear-gradient(135deg, rgba(192,192,192,0.2), rgba(169,169,169,0.2))' :
+                         'linear-gradient(135deg, rgba(205,127,50,0.2), rgba(184,115,51,0.2))',
+              border: '2px solid ' + (idx === 0 ? '#ffd700' : idx === 1 ? '#c0c0c0' : '#cd7f32'),
+              borderRadius: '12px',
+              padding: '1.5rem',
+              textAlign: 'center'
+            }}>
+              <div style={{fontSize: '3rem', marginBottom: '0.5rem'}}>
+                {idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'}
+              </div>
+              <div style={{fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem'}}>
+                #{idx + 1} Pick
+              </div>
+              <div style={{fontSize: '1.2rem', fontWeight: 'bold', color: idx === 0 ? '#ffd700' : idx === 1 ? '#c0c0c0' : '#cd7f32'}}>
+                {pick.team}
+              </div>
+              <div style={{fontSize: '0.9rem', opacity: 0.8, marginTop: '0.5rem'}}>
+                {pick.originalOdds}% odds
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Complete Draft Order */}
+        <div style={{marginBottom: '2rem'}}>
+          <h3 style={{textAlign: 'center', marginBottom: '1rem'}}>📋 Complete Lottery Order</h3>
+          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '0.5rem'}}>
+            {draftLotteryData.order.slice(0, 14).map((pick, idx) => (
+              <div key={idx} style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '0.75rem',
+                background: idx < 3 ? 'rgba(255,215,0,0.1)' : 'rgba(100,100,100,0.1)',
+                borderRadius: '8px',
+                border: idx < 3 ? '1px solid rgba(255,215,0,0.3)' : '1px solid rgba(100,100,100,0.2)'
+              }}>
+                <span style={{fontWeight: 'bold'}}>#{idx + 1}</span>
+                <span>{pick.team}</span>
+                <span style={{fontSize: '0.8rem', opacity: 0.7}}>{pick.originalOdds}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Lottery Details */}
+        <div style={{marginBottom: '2rem', padding: '1rem', background: 'rgba(59,130,246,0.1)', borderRadius: '8px'}}>
+          <h4 style={{margin: '0 0 1rem 0'}}>🎯 Lottery Details</h4>
+          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem'}}>
+            <div>
+              <p><strong>Drawing Method:</strong> Ping Pong Balls</p>
+              <p><strong>Total Combinations:</strong> 1,001</p>
+            </div>
+            <div>
+              <p><strong>Lottery Teams:</strong> 14</p>
+              <p><strong>Remaining Picks:</strong> Order by Record</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Top Prospects Preview */}
+        {draftLotteryData.prospects && (
+          <div style={{marginBottom: '2rem'}}>
+            <h3 style={{textAlign: 'center', marginBottom: '1rem'}}>⭐ Top Draft Prospects</h3>
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem'}}>
+              {draftLotteryData.prospects.slice(0, 6).map((prospect, idx) => (
+                <div key={idx} style={{
+                  padding: '1rem',
+                  background: 'rgba(100,100,100,0.1)',
+                  borderRadius: '8px',
+                  border: idx < 3 ? '1px solid rgba(255,215,0,0.3)' : '1px solid rgba(100,100,100,0.2)'
+                }}>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem'}}>
+                    <span style={{fontWeight: 'bold'}}>{prospect.name}</span>
+                    <span style={{fontSize: '0.9rem', color: '#10b981'}}>{prospect.overall} OVR</span>
+                  </div>
+                  <div style={{fontSize: '0.9rem', opacity: 0.8}}>
+                    <p>{prospect.position} • {prospect.school}</p>
+                    <p>{prospect.height} • {prospect.age} years old</p>
+                  </div>
+                  <div style={{marginTop: '0.5rem', fontSize: '0.8rem', opacity: 0.7}}>
+                    <p><strong>Projected:</strong> {idx < 5 ? 'Lottery Pick' : idx < 15 ? 'First Round' : 'Second Round'}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{textAlign: 'center'}}>
+          <button 
+            className="button" 
+            onClick={onClose}
+            style={{
+              background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+              padding: '0.75rem 2rem',
+              fontSize: '1.1rem'
+            }}
+          >
+            Continue to Draft
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ---------- Persistence ----------
