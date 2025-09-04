@@ -887,6 +887,383 @@ function initializeLuxuryTaxSystem(player) {
   }
 }
 
+// ========== REVENUE SHARING SYSTEM ==========
+
+const REVENUE_SHARING_CONFIG = {
+  // NBA Collective Bargaining Agreement settings
+  collectiveBargaining: {
+    totalRevenueShare: 0.50,        // 50% of league revenue shared
+    playerSalaryShare: 0.50,        // 50% of total revenue to players
+    ownerProfitShare: 0.30,         // 30% to owners
+    leagueOperationsShare: 0.20     // 20% to league operations
+  },
+  
+  // Revenue pools and sharing mechanisms
+  revenuePools: {
+    // National TV and media contracts (shared equally)
+    nationalMedia: {
+      sharePercentage: 1.0,         // 100% shared equally among all teams
+      sources: ['nationalTV', 'streaming', 'radio', 'international'],
+      annualValue: 2800             // $2.8B annually
+    },
+    
+    // Local revenue streams with sharing requirements
+    localRevenue: {
+      sharePercentage: 0.48,        // 48% of local revenue shared
+      sources: ['ticketSales', 'localTV', 'sponsorships', 'concessions', 'parking', 'naming'],
+      exemptions: ['luxury boxes', 'club seats'] // Some premium revenue not shared
+    },
+    
+    // Playoff and championship bonuses
+    playoffRevenue: {
+      sharePercentage: 0.75,        // 75% shared, 25% to participating teams
+      playerBonusPool: 0.15,        // 15% goes to player bonus pool
+      teamIncentives: 0.10          // 10% for team incentives
+    },
+    
+    // Merchandising and licensing
+    merchandising: {
+      sharePercentage: 1.0,         // 100% shared equally
+      playerRoyalties: 0.25,        // 25% to players
+      teamRoyalties: 0.75           // 75% to teams
+    }
+  },
+  
+  // Market size adjustments
+  marketAdjustments: {
+    largeMajorMarkets: {
+      threshold: 8000000,           // Population > 8M
+      contributionBonus: 1.15,      // Contribute 15% more to sharing pool
+      receiveReduction: 0.90        // Receive 10% less from sharing pool
+    },
+    
+    majorMarkets: {
+      threshold: 3000000,           // Population 3M-8M
+      contributionBonus: 1.05,      // Contribute 5% more
+      receiveReduction: 0.95        // Receive 5% less
+    },
+    
+    smallMarkets: {
+      threshold: 1500000,           // Population < 1.5M
+      contributionBonus: 0.90,      // Contribute 10% less
+      receiveBonus: 1.15           // Receive 15% more
+    }
+  },
+  
+  // Performance-based adjustments
+  performanceFactors: {
+    // Teams with better records contribute slightly more, receive slightly less
+    winPercentageAdjustment: {
+      enabled: true,
+      maxAdjustment: 0.05,          // Max 5% adjustment
+      threshold: 0.600              // Teams above 60% win rate affected
+    },
+    
+    // Recent success affects revenue sharing
+    recentSuccessAdjustment: {
+      championshipYears: 3,         // Look back 3 years
+      playoffYears: 5,              // Look back 5 years
+      adjustmentPerChampionship: 0.02, // 2% less sharing per championship
+      adjustmentPerPlayoff: 0.005   // 0.5% less sharing per playoff appearance
+    }
+  },
+  
+  // Luxury tax integration
+  luxuryTaxIntegration: {
+    // Luxury tax payments go to revenue sharing pool
+    luxuryTaxToPool: 0.50,          // 50% of luxury tax to revenue sharing
+    luxuryTaxToPlayers: 0.25,       // 25% to player benefits fund
+    luxuryTaxToLeague: 0.25         // 25% to league operations
+  },
+  
+  // Distribution timing and methods
+  distribution: {
+    frequency: 'monthly',           // Monthly distributions
+    advancePayments: 0.85,          // 85% paid during season, 15% after audit
+    escrowPercentage: 0.10,         // 10% held in escrow for adjustments
+    auditReconciliation: true       // Annual audit and true-up
+  }
+};
+
+// Calculate team's market size category
+function getMarketSizeCategory(team) {
+  const marketSizes = {
+    // Large Major Markets (>8M)
+    'LAL': 13200000, 'LAC': 13200000, 'NYK': 20300000, 'BKN': 20300000,
+    'CHI': 9500000, 'MIA': 6200000, 'PHI': 6200000, 'HOU': 7100000,
+    
+    // Major Markets (3M-8M)
+    'BOS': 4900000, 'ATL': 6100000, 'DAL': 7600000, 'DEN': 2900000,
+    'DET': 4300000, 'GSW': 7700000, 'MIN': 3700000, 'PHX': 5000000,
+    'POR': 2500000, 'SAC': 2400000, 'TOR': 6200000, 'WAS': 6300000,
+    
+    // Medium Markets (1.5M-3M)
+    'CLE': 2000000, 'IND': 2100000, 'MIL': 1600000, 'NOP': 1300000,
+    'OKC': 1400000, 'ORL': 2600000, 'CHA': 2600000, 'SAS': 2600000,
+    'UTA': 1200000,
+    
+    // Small Markets (<1.5M)
+    'MEM': 1400000, 'SAC': 2400000
+  };
+  
+  const population = marketSizes[team] || 2000000; // Default to medium market
+  const config = REVENUE_SHARING_CONFIG.marketAdjustments;
+  
+  if (population >= config.largeMajorMarkets.threshold) {
+    return { category: 'largeMajor', ...config.largeMajorMarkets };
+  } else if (population >= config.majorMarkets.threshold) {
+    return { category: 'major', ...config.majorMarkets };
+  } else if (population >= config.smallMarkets.threshold) {
+    return { category: 'medium', contributionBonus: 1.0, receiveBonus: 1.0 };
+  } else {
+    return { category: 'small', ...config.smallMarkets };
+  }
+}
+
+// Calculate league-wide revenue pools
+function calculateLeagueRevenuePools(allTeams) {
+  const pools = {
+    nationalMedia: REVENUE_SHARING_CONFIG.revenuePools.nationalMedia.annualValue,
+    localRevenue: 0,
+    playoffRevenue: 0,
+    merchandising: 0,
+    luxuryTaxPool: 0,
+    totalSharedRevenue: 0
+  };
+  
+  // Calculate local revenue pool from all teams
+  allTeams.forEach(team => {
+    if (team.finances) {
+      // Local revenue sources subject to sharing
+      const localRevenue = (
+        team.finances.ticketSales || 0 +
+        team.finances.localTV || 0 +
+        team.finances.sponsorships || 0 +
+        team.finances.concessions || 0 +
+        team.finances.parking || 0
+      ) * REVENUE_SHARING_CONFIG.revenuePools.localRevenue.sharePercentage;
+      
+      pools.localRevenue += localRevenue;
+      
+      // Merchandising revenue
+      pools.merchandising += (team.finances.merchandising || 0);
+      
+      // Playoff revenue (if team made playoffs)
+      if (team.madePlayoffs) {
+        pools.playoffRevenue += (team.finances.playoffRevenue || 0) * 
+          REVENUE_SHARING_CONFIG.revenuePools.playoffRevenue.sharePercentage;
+      }
+      
+      // Luxury tax contributions
+      if (team.finances.luxuryTaxPaid > 0) {
+        pools.luxuryTaxPool += team.finances.luxuryTaxPaid * 
+          REVENUE_SHARING_CONFIG.luxuryTaxIntegration.luxuryTaxToPool;
+      }
+    }
+  });
+  
+  // Calculate total shared revenue
+  pools.totalSharedRevenue = 
+    pools.nationalMedia + 
+    pools.localRevenue + 
+    pools.playoffRevenue + 
+    pools.merchandising + 
+    pools.luxuryTaxPool;
+  
+  return pools;
+}
+
+// Calculate individual team's revenue sharing
+function calculateTeamRevenueSharing(team, leaguePools, teamRecord) {
+  const marketCategory = getMarketSizeCategory(team.team);
+  const baseShare = leaguePools.totalSharedRevenue / 30; // Equal share for 30 teams
+  
+  // Market size adjustments
+  let adjustedShare = baseShare * marketCategory.receiveBonus || baseShare * marketCategory.receiveReduction || baseShare;
+  
+  // Performance-based adjustments
+  const config = REVENUE_SHARING_CONFIG.performanceFactors;
+  if (config.winPercentageAdjustment.enabled && teamRecord) {
+    const winPct = teamRecord.wins / (teamRecord.wins + teamRecord.losses);
+    if (winPct > config.winPercentageAdjustment.threshold) {
+      const adjustment = Math.min(
+        (winPct - config.winPercentageAdjustment.threshold) * 2, 
+        config.winPercentageAdjustment.maxAdjustment
+      );
+      adjustedShare *= (1 - adjustment);
+    }
+  }
+  
+  // Calculate what team contributes to revenue sharing
+  let teamContribution = 0;
+  if (team.finances) {
+    // Local revenue contribution
+    const localRevenue = (
+      team.finances.ticketSales || 0 +
+      team.finances.localTV || 0 +
+      team.finances.sponsorships || 0 +
+      team.finances.concessions || 0 +
+      team.finances.parking || 0
+    ) * REVENUE_SHARING_CONFIG.revenuePools.localRevenue.sharePercentage;
+    
+    teamContribution = localRevenue * (marketCategory.contributionBonus || 1.0);
+    
+    // Add luxury tax contribution
+    if (team.finances.luxuryTaxPaid > 0) {
+      teamContribution += team.finances.luxuryTaxPaid * 
+        REVENUE_SHARING_CONFIG.luxuryTaxIntegration.luxuryTaxToPool;
+    }
+  }
+  
+  return {
+    shareReceived: adjustedShare,
+    contributionMade: teamContribution,
+    netRevenue: adjustedShare - teamContribution,
+    marketCategory: marketCategory.category,
+    poolBreakdown: {
+      nationalMedia: leaguePools.nationalMedia / 30,
+      localRevenue: leaguePools.localRevenue / 30 * (marketCategory.receiveBonus || marketCategory.receiveReduction || 1.0),
+      merchandising: leaguePools.merchandising / 30,
+      luxuryTax: leaguePools.luxuryTaxPool / 30
+    }
+  };
+}
+
+// Apply revenue sharing to team finances
+function applyRevenueSharingToTeam(player, revenueSharingResult) {
+  if (!player.league?.teams?.[player.team]) return;
+  
+  const team = player.league.teams[player.team];
+  if (!team.finances) return;
+  
+  // Add revenue sharing income
+  team.finances.revenueSharing = revenueSharingResult.shareReceived;
+  team.finances.revenueSharingContribution = revenueSharingResult.contributionMade;
+  team.finances.netRevenueSharing = revenueSharingResult.netRevenue;
+  
+  // Update total revenue
+  team.finances.revenue = (team.finances.revenue || 0) + revenueSharingResult.netRevenue;
+  team.finances.profit = team.finances.revenue - (team.finances.expenses || 0);
+  
+  // Track revenue sharing history
+  if (!team.revenueSharingHistory) {
+    team.revenueSharingHistory = [];
+  }
+  
+  team.revenueSharingHistory.push({
+    season: player.season,
+    shareReceived: revenueSharingResult.shareReceived,
+    contributionMade: revenueSharingResult.contributionMade,
+    netRevenue: revenueSharingResult.netRevenue,
+    marketCategory: revenueSharingResult.marketCategory
+  });
+  
+  // Keep only last 5 years
+  if (team.revenueSharingHistory.length > 5) {
+    team.revenueSharingHistory = team.revenueSharingHistory.slice(-5);
+  }
+}
+
+// Calculate league-wide revenue sharing for all teams
+function processLeagueRevenueSharing(player) {
+  if (!player.league?.teams) return;
+  
+  // Collect all teams and their financial data
+  const allTeams = Object.values(player.league.teams);
+  
+  // Calculate league revenue pools
+  const leaguePools = calculateLeagueRevenuePools(allTeams);
+  
+  // Apply revenue sharing to each team
+  allTeams.forEach(team => {
+    const teamRecord = player.league.standings?.[team.team];
+    const revenueSharingResult = calculateTeamRevenueSharing(team, leaguePools, teamRecord);
+    
+    // Apply to team finances
+    team.finances = team.finances || {};
+    team.finances.revenueSharing = revenueSharingResult.shareReceived;
+    team.finances.revenueSharingContribution = revenueSharingResult.contributionMade;
+    team.finances.netRevenueSharing = revenueSharingResult.netRevenue;
+    
+    // Update total revenue
+    team.finances.revenue = (team.finances.baseRevenue || team.finances.revenue || 0) + revenueSharingResult.netRevenue;
+    team.finances.profit = team.finances.revenue - (team.finances.expenses || 0);
+  });
+  
+  // Store league-wide revenue sharing data
+  if (!player.league.revenueSharing) {
+    player.league.revenueSharing = {};
+  }
+  
+  player.league.revenueSharing[player.season] = {
+    totalSharedRevenue: leaguePools.totalSharedRevenue,
+    pools: leaguePools,
+    perTeamShare: leaguePools.totalSharedRevenue / 30
+  };
+}
+
+// Get revenue sharing analytics for display
+function getRevenueSharingAnalytics(player) {
+  if (!player.league?.teams?.[player.team]) return null;
+  
+  const team = player.league.teams[player.team];
+  const marketCategory = getMarketSizeCategory(player.team);
+  const leagueData = player.league.revenueSharing?.[player.season];
+  
+  return {
+    currentSeason: {
+      shareReceived: team.finances?.revenueSharing || 0,
+      contributionMade: team.finances?.revenueSharingContribution || 0,
+      netRevenue: team.finances?.netRevenueSharing || 0,
+      marketCategory: marketCategory.category
+    },
+    
+    leagueWide: {
+      totalSharedRevenue: leagueData?.totalSharedRevenue || 0,
+      perTeamShare: leagueData?.perTeamShare || 0,
+      nationalMediaPool: leagueData?.pools?.nationalMedia || 0,
+      localRevenuePool: leagueData?.pools?.localRevenue || 0,
+      luxuryTaxPool: leagueData?.pools?.luxuryTaxPool || 0
+    },
+    
+    history: team.revenueSharingHistory || [],
+    
+    marketInfo: {
+      category: marketCategory.category,
+      contributionMultiplier: marketCategory.contributionBonus || 1.0,
+      receiveMultiplier: marketCategory.receiveBonus || marketCategory.receiveReduction || 1.0
+    }
+  };
+}
+
+// Initialize revenue sharing system for existing saves
+function initializeRevenueSharingSystem(player) {
+  if (!player.league) {
+    player.league = {};
+  }
+  if (!player.league.revenueSharing) {
+    player.league.revenueSharing = {};
+  }
+  
+  // Ensure all teams have basic financial structure
+  if (player.league.teams) {
+    Object.values(player.league.teams).forEach(team => {
+      if (!team.finances) {
+        team.finances = {
+          revenue: irnd(180, 350),
+          expenses: irnd(150, 280),
+          revenueSharing: 0,
+          revenueSharingContribution: 0,
+          netRevenueSharing: 0
+        };
+      }
+      if (!team.revenueSharingHistory) {
+        team.revenueSharingHistory = [];
+      }
+    });
+  }
+}
+
 // Player Holdouts System Configuration
 const HOLDOUT_CONFIG = {
   // Conditions that can trigger holdouts
@@ -3997,6 +4374,9 @@ function newPlayer(custom){
   // Initialize luxury tax system
   initializeLuxuryTaxSystem(player);
   
+  // Initialize revenue sharing system
+  initializeRevenueSharingSystem(player);
+  
   return player;
 }
 
@@ -6569,6 +6949,28 @@ export default function BasketballLife(){
             "Team hit first apron - roster building restrictions apply";
           p.career.timeline.push(event("Restrictions", apronMessage));
         }
+      }
+    }
+    
+    // Initialize and process revenue sharing for the season
+    initializeRevenueSharingSystem(p);
+    processLeagueRevenueSharing(p);
+    
+    // Add revenue sharing information to career timeline
+    const revenueSharingAnalytics = getRevenueSharingAnalytics(p);
+    if (revenueSharingAnalytics) {
+      const netRevenue = revenueSharingAnalytics.currentSeason.netRevenue;
+      if (netRevenue > 0) {
+        p.career.timeline.push(event("Revenue Sharing", 
+          `Team received net $${Math.round(netRevenue)}M from revenue sharing (${revenueSharingAnalytics.marketInfo.category} market)`));
+      } else if (netRevenue < 0) {
+        p.career.timeline.push(event("Revenue Sharing", 
+          `Team contributed net $${Math.round(Math.abs(netRevenue))}M to revenue sharing (${revenueSharingAnalytics.marketInfo.category} market)`));
+      }
+      
+      // Add collective bargaining information for major changes
+      if (p.season % 7 === 0) { // Every 7 years (typical CBA cycle)
+        p.career.timeline.push(event("CBA", "New Collective Bargaining Agreement affects revenue sharing structure"));
       }
     }
 
@@ -11000,6 +11402,135 @@ function AnalyticsPanel({ game }){
         </div>
       )}
 
+      {/* Revenue Sharing Analytics */}
+      <div className="panel">
+        <h3 style={{marginBottom: '16px', color: 'var(--team-primary)'}}>🤝 League Revenue Sharing</h3>
+        
+        {(() => {
+          const revenueSharingAnalytics = getRevenueSharingAnalytics(game);
+          if (!revenueSharingAnalytics) return <div style={{padding: '12px', textAlign: 'center', opacity: '0.6'}}>Revenue sharing data not available</div>;
+          
+          return (
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px'}}>
+              {/* Current Season Revenue Sharing */}
+              <div style={{
+                padding: '12px', 
+                background: revenueSharingAnalytics.currentSeason.netRevenue >= 0 ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)', 
+                borderRadius: '8px',
+                border: `1px solid ${revenueSharingAnalytics.currentSeason.netRevenue >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
+              }}>
+                <h4 style={{margin: '0 0 8px 0', fontSize: '14px'}}>
+                  Current Season ({revenueSharingAnalytics.marketInfo.category} market)
+                </h4>
+                <div style={{fontSize: '12px', gap: '6px', display: 'flex', flexDirection: 'column'}}>
+                  <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                    <span>Share Received:</span>
+                    <span style={{fontWeight: 'bold', color: '#10b981'}}>
+                      {formatMoney(revenueSharingAnalytics.currentSeason.shareReceived)}
+                    </span>
+                  </div>
+                  <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                    <span>Contribution Made:</span>
+                    <span style={{fontWeight: 'bold', color: '#ef4444'}}>
+                      {formatMoney(revenueSharingAnalytics.currentSeason.contributionMade)}
+                    </span>
+                  </div>
+                  <div style={{display: 'flex', justifyContent: 'space-between', paddingTop: '6px', borderTop: '1px solid rgba(107, 114, 128, 0.2)'}}>
+                    <span style={{fontWeight: 'bold'}}>Net Revenue:</span>
+                    <span style={{
+                      fontWeight: 'bold',
+                      color: revenueSharingAnalytics.currentSeason.netRevenue >= 0 ? '#10b981' : '#ef4444'
+                    }}>
+                      {revenueSharingAnalytics.currentSeason.netRevenue >= 0 ? '+' : ''}{formatMoney(revenueSharingAnalytics.currentSeason.netRevenue)}
+                    </span>
+                  </div>
+                </div>
+                <div style={{marginTop: '8px', fontSize: '11px', opacity: '0.8', textAlign: 'center'}}>
+                  Market multipliers: Contribution {(revenueSharingAnalytics.marketInfo.contributionMultiplier * 100).toFixed(0)}% | 
+                  Receive {(revenueSharingAnalytics.marketInfo.receiveMultiplier * 100).toFixed(0)}%
+                </div>
+              </div>
+              
+              {/* League-wide Revenue Pools */}
+              <div style={{padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px'}}>
+                <h4 style={{margin: '0 0 8px 0', fontSize: '14px'}}>League Revenue Pools</h4>
+                <div style={{fontSize: '12px', gap: '6px', display: 'flex', flexDirection: 'column'}}>
+                  <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                    <span>Total Shared:</span>
+                    <span style={{fontWeight: 'bold', color: '#22c55e'}}>
+                      {formatMoney(revenueSharingAnalytics.leagueWide.totalSharedRevenue)}
+                    </span>
+                  </div>
+                  <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                    <span>National Media:</span>
+                    <span>{formatMoney(revenueSharingAnalytics.leagueWide.nationalMediaPool)}</span>
+                  </div>
+                  <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                    <span>Local Revenue:</span>
+                    <span>{formatMoney(revenueSharingAnalytics.leagueWide.localRevenuePool)}</span>
+                  </div>
+                  <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                    <span>Luxury Tax Pool:</span>
+                    <span style={{color: revenueSharingAnalytics.leagueWide.luxuryTaxPool > 0 ? '#f59e0b' : '#6b7280'}}>
+                      {formatMoney(revenueSharingAnalytics.leagueWide.luxuryTaxPool)}
+                    </span>
+                  </div>
+                  <div style={{display: 'flex', justifyContent: 'space-between', paddingTop: '6px', borderTop: '1px solid rgba(107, 114, 128, 0.2)'}}>
+                    <span style={{fontWeight: 'bold'}}>Per Team Share:</span>
+                    <span style={{fontWeight: 'bold', color: '#22c55e'}}>
+                      {formatMoney(revenueSharingAnalytics.leagueWide.perTeamShare)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Historical Revenue Sharing */}
+              {revenueSharingAnalytics.history.length > 0 && (
+                <div style={{padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px'}}>
+                  <h4 style={{margin: '0 0 8px 0', fontSize: '14px'}}>Historical Revenue</h4>
+                  <div style={{fontSize: '11px', maxHeight: '140px', overflowY: 'auto'}}>
+                    {revenueSharingAnalytics.history.slice(-5).map((record, idx) => (
+                      <div key={idx} style={{
+                        display: 'flex', 
+                        justifyContent: 'space-between',
+                        padding: '4px 0',
+                        borderBottom: idx < revenueSharingAnalytics.history.slice(-5).length - 1 ? '1px solid rgba(107, 114, 128, 0.1)' : 'none'
+                      }}>
+                        <span>Season {record.season}:</span>
+                        <span style={{
+                          fontWeight: 'bold',
+                          color: record.netRevenue >= 0 ? '#10b981' : '#ef4444'
+                        }}>
+                          {record.netRevenue >= 0 ? '+' : ''}{formatMoney(record.netRevenue)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{fontSize: '10px', color: '#6b7280', marginTop: '6px', textAlign: 'center', opacity: '0.8'}}>
+                    Net revenue over last {Math.min(revenueSharingAnalytics.history.length, 5)} seasons
+                  </div>
+                </div>
+              )}
+              
+              {/* CBA Information */}
+              <div style={{padding: '12px', background: 'rgba(59, 130, 246, 0.05)', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)'}}>
+                <h4 style={{margin: '0 0 8px 0', fontSize: '14px', color: '#3b82f6'}}>Collective Bargaining</h4>
+                <div style={{fontSize: '11px', gap: '4px', display: 'flex', flexDirection: 'column', color: '#1e40af'}}>
+                  <div>• 50% of league revenue shared among teams</div>
+                  <div>• Market size adjustments apply</div>
+                  <div>• 48% of local revenue contributed to pool</div>
+                  <div>• National TV/media deals shared equally</div>
+                  <div>• Luxury tax payments boost sharing pool</div>
+                  <div style={{marginTop: '4px', fontSize: '10px', opacity: '0.8'}}>
+                    Next CBA negotiation: Season {game.season + (7 - (game.season % 7))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+
     </div>
   );
 }
@@ -13301,6 +13832,48 @@ function TeamOwnershipPanel({ game, onManageTeam }) {
                               </div>
                             )}
                           </>
+                        );
+                      })()}
+                      
+                      {(() => {
+                        const revenueSharingAnalytics = getRevenueSharingAnalytics(game);
+                        if (!revenueSharingAnalytics) return null;
+                        
+                        return (
+                          <div style={{marginTop: '1rem', padding: '0.8rem', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.3)'}}>
+                            <div style={{fontSize: '0.8rem', color: '#059669', fontWeight: 'bold', marginBottom: '0.5rem'}}>
+                              Revenue Sharing ({revenueSharingAnalytics.marketInfo.category} market):
+                            </div>
+                            
+                            <div className="stat-box" style={{marginBottom: '0.3rem'}}>
+                              <div className="stat-label" style={{fontSize: '0.7rem'}}>Share Received</div>
+                              <div className="stat-value" style={{fontSize: '0.7rem', color: '#059669'}}>
+                                {formatMoney(revenueSharingAnalytics.currentSeason.shareReceived)}
+                              </div>
+                            </div>
+                            
+                            <div className="stat-box" style={{marginBottom: '0.3rem'}}>
+                              <div className="stat-label" style={{fontSize: '0.7rem'}}>Contribution Made</div>
+                              <div className="stat-value" style={{fontSize: '0.7rem', color: '#dc2626'}}>
+                                {formatMoney(revenueSharingAnalytics.currentSeason.contributionMade)}
+                              </div>
+                            </div>
+                            
+                            <div className="stat-box">
+                              <div className="stat-label" style={{fontSize: '0.7rem'}}>Net Revenue</div>
+                              <div className="stat-value" style={{
+                                fontSize: '0.7rem', 
+                                color: revenueSharingAnalytics.currentSeason.netRevenue >= 0 ? '#059669' : '#dc2626'
+                              }}>
+                                {revenueSharingAnalytics.currentSeason.netRevenue >= 0 ? '+' : ''}{formatMoney(revenueSharingAnalytics.currentSeason.netRevenue)}
+                              </div>
+                            </div>
+                            
+                            <div style={{fontSize: '0.6rem', color: '#6b7280', marginTop: '0.5rem', textAlign: 'center'}}>
+                              League Total: {formatMoney(revenueSharingAnalytics.leagueWide.totalSharedRevenue)} | 
+                              Per Team: {formatMoney(revenueSharingAnalytics.leagueWide.perTeamShare)}
+                            </div>
+                          </div>
                         );
                       })()}
                     </div>
