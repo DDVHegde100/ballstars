@@ -1287,6 +1287,9 @@ const generateDraftProspects = (draftYear) => {
       }
     };
     
+    // Initialize rookie development system for all prospects
+    initializeRookieDevelopment(prospect);
+    
     prospects.push(prospect);
   }
   
@@ -2962,6 +2965,87 @@ function newPlayer(custom){
       birthYear: getCurrentYear(1) - age
     },
   };
+  
+  // Initialize rookie development system for young players
+  const player = {
+    firstName, lastName, age, archetype: arch, ratings, potential: clamp(ratings.overall + irnd(4,15), 70, 99),
+    appearance,
+    morale: 70, health: 100, peak: 90, fame: 5, followers: irnd(1000, 5000), cash: 50, 
+    // Enhanced Morale System
+    moraleFactors: {
+      teamPerformance: 70,    // How well team is doing (wins/losses)
+      playingTime: 70,        // Minutes per game satisfaction
+      contractStatus: 70,     // Happy with current contract
+      teamChemistry: 70,      // Relationships with teammates
+      coachRelationship: 70,  // Relationship with coaching staff
+      mediaAttention: 70,     // Press coverage and fan reaction
+      personalLife: 70,       // Family, health, off-court issues
+      roleClarity: 70,        // Clear understanding of team role
+      facilityQuality: 70,    // Training facilities and amenities
+      marketSize: 70          // Playing in desired market size
+    },
+    moraleHistory: [],        // Track morale changes over time
+    personalityTraits: {
+      competitiveness: irnd(60, 95),    // Desire to win
+      loyalty: irnd(40, 90),            // Team loyalty
+      selfishness: irnd(20, 80),        // Individual vs team focus
+      workEthic: irnd(50, 95),          // Training dedication
+      mediaComfort: irnd(30, 90),       // Comfort with press
+      leadership: irnd(20, 85),         // Natural leadership ability
+      adaptability: irnd(40, 90),       // Adjusting to new situations
+      ambition: irnd(50, 95)            // Career goals and drive
+    },
+    chemistry: {
+      relationships: {},                // Player relationships
+      teamBonding: irnd(40, 70),       // Overall team feeling
+      lastUpdated: 0                   // Relationship update tracking
+    },
+    energy: irnd(75, 95),               // Fatigue management system
+    injuryHistory: [],                  // Comprehensive injury tracking
+    currentInjury: null,                // Active injury details
+    injurySusceptibility: {},           // Calculated injury risks
+    careerLongevity: {                  // Career projection data
+      projection: 'Excellent',
+      projectedYearsLeft: 8,
+      riskFactors: []
+    },
+    endorsements: [], shoeDeals: [], premiumServices: [],
+    // New life features
+    relationships: { girlfriend: null, relationshipLevel: 0 },
+    investments: [],
+    lifestyleActivities: [],
+    socialMediaChallenges: [],
+    teamChemistry: irnd(40,75),
+    // End new features
+    team: rookie.team, arena: genArena(rookie.team), jersey: irnd(0,99),
+    contract: { ...rookie, year: 1 },
+    season: 1, week: 1, phase: "Preseason", // Preseason, Regular, Playoffs, Offseason
+    teamChem: irnd(40,75), teamStrength: irnd(65,85), teamStanding: irnd(8,15),
+    teammates: generateTeammates(),
+    stats: resetSeasonStats(),
+    league: initializeLeague(),
+    career: { seasons: [], awards: [], totals: resetCareerTotals(), timeline: [event("Signed", `Drafted by ${rookie.team}`)] },
+    alive: true, retired: false,
+    // Enhanced post-retirement structure
+    postRetirement: {
+      phase: null, // 'celebration', 'hof_voting', 'management'
+      ownedTeams: [],
+      managedTeam: null,
+      coachingExperience: 0,
+      businessVentures: [],
+      reputation: 0,
+      availablePositions: [],
+      currentYear: getCurrentYear(1),
+      birthYear: getCurrentYear(1) - age
+    },
+  };
+  
+  // Initialize rookie development for young players
+  if (age <= 25) {
+    initializeRookieDevelopment(player);
+  }
+  
+  return player;
 }
 
 function initializeLeague() {
@@ -3338,22 +3422,276 @@ function teamWinChance(p, gameState){
   return clamp(baseChance + starPower + chem + strength + peak + health + morale, 0.05, 0.80);
 }
 
-function progressAging(p){
-  // development curve: improve early, plateau, decline later
-  const dev = p.potential - p.ratings.overall;
-  let delta = 0;
-  if(p.age <= 24) delta = clamp( (dev>0? rnd(0.2,1.5): rnd(-0.5,0.5)) + rnd(-0.4,0.4), -1.0, 2.0);
-  else if(p.age <= 28) delta = clamp( rnd(-0.3, 1.2), -0.8, 1.5);
-  else if(p.age <= 32) delta = clamp( rnd(-1.0, 0.6), -1.6, 1.0);
-  else delta = clamp( rnd(-2.2, -0.2), -3.0, 0.2);
-  const keys = ["shooting","finishing","playmaking","defense","rebounding","stamina","dunking","passing","leadership"];
-  keys.forEach(k=>{ 
-    if(["shooting","finishing","playmaking","defense","rebounding"].includes(k)) {
-      p.ratings[k] = clamp(Math.round(p.ratings[k] + delta + rnd(-0.4,0.4)), 40, 99);
-    } else {
-      p.ratings[k] = clamp(Math.round(p.ratings[k] + delta*0.7 + rnd(-0.3,0.3)), 40, 99);
+// Rookie Development Curves Configuration
+const ROOKIE_DEVELOPMENT_CONFIG = {
+  // Work ethic affects development rate
+  workEthicMultipliers: {
+    'elite': 1.4,      // Elite work ethic - fastest development
+    'high': 1.2,       // High work ethic - above average
+    'average': 1.0,    // Average work ethic - normal rate
+    'poor': 0.7,       // Poor work ethic - slower development
+    'concerning': 0.5  // Concerning work ethic - much slower
+  },
+  
+  // Development stages with different growth patterns
+  developmentStages: {
+    rookie: { age: [19, 21], baseGrowth: 1.8, variance: 0.6 },
+    sophomore: { age: [22, 23], baseGrowth: 1.4, variance: 0.5 },
+    emerging: { age: [24, 25], baseGrowth: 1.0, variance: 0.4 },
+    prime: { age: [26, 29], baseGrowth: 0.3, variance: 0.7 },
+    veteran: { age: [30, 33], baseGrowth: -0.2, variance: 0.6 },
+    aging: { age: [34, 99], baseGrowth: -1.2, variance: 0.8 }
+  },
+  
+  // Skill-specific development rates
+  skillDevelopmentRates: {
+    shooting: { youngBonus: 0.3, peakAge: 28 },
+    finishing: { youngBonus: 0.2, peakAge: 26 },
+    playmaking: { youngBonus: 0.4, peakAge: 30 },
+    defense: { youngBonus: 0.1, peakAge: 29 },
+    rebounding: { youngBonus: 0.1, peakAge: 27 },
+    stamina: { youngBonus: -0.1, peakAge: 24 },
+    dunking: { youngBonus: 0.0, peakAge: 25 },
+    passing: { youngBonus: 0.3, peakAge: 31 },
+    leadership: { youngBonus: 0.5, peakAge: 32 }
+  }
+};
+
+function initializeRookieDevelopment(player) {
+  if (!player.rookieDevelopment) {
+    // Assign work ethic if not present
+    if (!player.workEthic) {
+      const workEthicRoll = Math.random();
+      if (workEthicRoll < 0.05) player.workEthic = 'elite';
+      else if (workEthicRoll < 0.20) player.workEthic = 'high';
+      else if (workEthicRoll < 0.70) player.workEthic = 'average';
+      else if (workEthicRoll < 0.90) player.workEthic = 'poor';
+      else player.workEthic = 'concerning';
+    }
+    
+    player.rookieDevelopment = {
+      workEthic: player.workEthic,
+      yearlyProgress: [],
+      skillTrajectories: {},
+      breakoutPotential: Math.random() * 100,
+      mentalToughness: 50 + (Math.random() - 0.5) * 30,
+      coachability: 50 + (Math.random() - 0.5) * 40,
+      adaptability: 50 + (Math.random() - 0.5) * 30,
+      injuryResilient: Math.random() > 0.7,
+      lastSeasonOverall: player.ratings.overall
+    };
+    
+    // Initialize skill trajectories
+    Object.keys(ROOKIE_DEVELOPMENT_CONFIG.skillDevelopmentRates).forEach(skill => {
+      player.rookieDevelopment.skillTrajectories[skill] = {
+        potential: player.potential + rnd(-5, 10),
+        currentMomentum: 0,
+        plateauRisk: Math.random() * 0.3,
+        specialization: Math.random() > 0.8 // 20% chance of specializing in this skill
+      };
+    });
+  }
+}
+
+function calculateRookieDevelopment(player) {
+  if (player.age > 25) return null; // Only applies to young players
+  
+  initializeRookieDevelopment(player);
+  
+  const dev = player.rookieDevelopment;
+  const potential = player.potential;
+  const currentOverall = player.ratings.overall;
+  const remainingPotential = potential - currentOverall;
+  
+  // Get development stage
+  let stage = null;
+  for (const [stageName, stageData] of Object.entries(ROOKIE_DEVELOPMENT_CONFIG.developmentStages)) {
+    if (player.age >= stageData.age[0] && player.age <= stageData.age[1]) {
+      stage = stageData;
+      break;
+    }
+  }
+  
+  if (!stage) return null;
+  
+  // Base development rate
+  let developmentRate = stage.baseGrowth;
+  
+  // Work ethic modifier
+  const workEthicMultiplier = ROOKIE_DEVELOPMENT_CONFIG.workEthicMultipliers[dev.workEthic] || 1.0;
+  developmentRate *= workEthicMultiplier;
+  
+  // Potential ceiling effect - harder to improve when close to potential
+  const potentialDistance = remainingPotential / 20; // 0-1 scale
+  const ceilingPenalty = Math.max(0.3, potentialDistance);
+  developmentRate *= ceilingPenalty;
+  
+  // Playing time impact (if player has stats)
+  if (player.stats && player.stats.games > 0) {
+    const minutesPerGame = player.stats.minutes / player.stats.games;
+    const playingTimeBonus = Math.min(1.3, 0.7 + (minutesPerGame / 36) * 0.6);
+    developmentRate *= playingTimeBonus;
+  }
+  
+  // Team environment impact
+  const teamSuccess = (player.stats?.wins || 0) / Math.max(1, (player.stats?.games || 1));
+  const environmentBonus = 0.9 + (teamSuccess * 0.2); // Better teams help development
+  developmentRate *= environmentBonus;
+  
+  // Injury impact
+  if (player.health < 80) {
+    developmentRate *= (0.6 + player.health / 200); // Injuries slow development
+  }
+  
+  // Breakthrough/plateau chances
+  const breakoutChance = (dev.breakoutPotential / 100) * 0.05; // 5% max chance
+  const plateauChance = dev.plateauRisk * 0.1; // Up to 3% plateau chance
+  
+  if (Math.random() < breakoutChance) {
+    developmentRate *= 1.8; // Breakthrough season
+    dev.breakoutPotential *= 0.7; // Reduce future breakthrough chances
+  } else if (Math.random() < plateauChance) {
+    developmentRate *= 0.3; // Plateau/regression
+    dev.plateauRisk *= 0.8; // Reduce future plateau risk
+  }
+  
+  // Add variance
+  const variance = stage.variance * (Math.random() - 0.5);
+  developmentRate += variance;
+  
+  return {
+    baseDevelopment: developmentRate,
+    workEthicMultiplier,
+    playingTimeImpact: player.stats?.games > 0 ? (player.stats.minutes / player.stats.games) / 36 : 0,
+    environmentFactor: environmentBonus,
+    potentialDistance,
+    details: {
+      stage: Object.keys(ROOKIE_DEVELOPMENT_CONFIG.developmentStages).find(key => 
+        ROOKIE_DEVELOPMENT_CONFIG.developmentStages[key] === stage
+      ),
+      workEthic: dev.workEthic,
+      remainingPotential
+    }
+  };
+}
+
+function applySkillSpecificDevelopment(player, baseDevelopment) {
+  const skillRates = ROOKIE_DEVELOPMENT_CONFIG.skillDevelopmentRates;
+  const dev = player.rookieDevelopment;
+  
+  Object.keys(skillRates).forEach(skill => {
+    if (!player.ratings[skill]) return;
+    
+    const skillData = skillRates[skill];
+    const trajectory = dev.skillTrajectories[skill];
+    
+    // Age-based skill development modifier
+    let skillMultiplier = 1.0;
+    if (player.age <= 23) {
+      skillMultiplier += skillData.youngBonus; // Young players develop certain skills faster
+    }
+    
+    // Peak age consideration
+    const ageToPeak = Math.abs(player.age - skillData.peakAge);
+    const peakProximityBonus = Math.max(0.8, 1.2 - (ageToPeak / 10));
+    skillMultiplier *= peakProximityBonus;
+    
+    // Specialization bonus
+    if (trajectory.specialization) {
+      skillMultiplier *= 1.3;
+    }
+    
+    // Momentum system - skills that improved last season are more likely to improve again
+    if (trajectory.currentMomentum > 0) {
+      skillMultiplier *= (1 + trajectory.currentMomentum * 0.2);
+      trajectory.currentMomentum *= 0.7; // Decay momentum
+    }
+    
+    // Calculate final skill development
+    const skillDevelopment = baseDevelopment * skillMultiplier;
+    const skillChange = clamp(skillDevelopment + rnd(-0.3, 0.3), -2.5, 3.0);
+    
+    const oldValue = player.ratings[skill];
+    const newValue = clamp(Math.round(oldValue + skillChange), 40, 99);
+    player.ratings[skill] = newValue;
+    
+    // Update momentum
+    if (newValue > oldValue) {
+      trajectory.currentMomentum = Math.min(1.0, trajectory.currentMomentum + 0.3);
+    } else if (newValue < oldValue) {
+      trajectory.currentMomentum = Math.max(-0.5, trajectory.currentMomentum - 0.2);
     }
   });
+}
+
+function trackDevelopmentProgress(player, developmentData) {
+  const dev = player.rookieDevelopment;
+  const currentSeason = player.season || new Date().getFullYear();
+  
+  // Record yearly progress
+  const yearProgress = {
+    season: currentSeason,
+    age: player.age,
+    overallChange: player.ratings.overall - dev.lastSeasonOverall,
+    developmentRate: developmentData.baseDevelopment,
+    workEthic: dev.workEthic,
+    playingTime: developmentData.playingTimeImpact,
+    injuries: player.health < 80,
+    teamSuccess: (player.stats?.wins || 0) / Math.max(1, (player.stats?.games || 1))
+  };
+  
+  dev.yearlyProgress.push(yearProgress);
+  dev.lastSeasonOverall = player.ratings.overall;
+  
+  // Keep only last 5 years of progress
+  if (dev.yearlyProgress.length > 5) {
+    dev.yearlyProgress = dev.yearlyProgress.slice(-5);
+  }
+  
+  // Update development characteristics based on progress
+  const recentProgress = dev.yearlyProgress.slice(-2);
+  if (recentProgress.length >= 2) {
+    const avgProgress = recentProgress.reduce((sum, year) => sum + year.overallChange, 0) / recentProgress.length;
+    
+    // Adjust future development based on recent performance
+    if (avgProgress > 2) {
+      dev.mentalToughness = Math.min(100, dev.mentalToughness + 2);
+      dev.coachability = Math.min(100, dev.coachability + 1);
+    } else if (avgProgress < -1) {
+      dev.mentalToughness = Math.max(0, dev.mentalToughness - 1);
+      dev.adaptability = Math.max(0, dev.adaptability - 1);
+    }
+  }
+}
+
+function progressAging(p){
+  // Enhanced development system with rookie curves
+  const rookieDevData = calculateRookieDevelopment(p);
+  
+  if (rookieDevData && p.age <= 25) {
+    // Use sophisticated rookie development system
+    applySkillSpecificDevelopment(p, rookieDevData.baseDevelopment);
+    trackDevelopmentProgress(p, rookieDevData);
+  } else {
+    // Use traditional development for older players
+    const dev = p.potential - p.ratings.overall;
+    let delta = 0;
+    if(p.age <= 24) delta = clamp( (dev>0? rnd(0.2,1.5): rnd(-0.5,0.5)) + rnd(-0.4,0.4), -1.0, 2.0);
+    else if(p.age <= 28) delta = clamp( rnd(-0.3, 1.2), -0.8, 1.5);
+    else if(p.age <= 32) delta = clamp( rnd(-1.0, 0.6), -1.6, 1.0);
+    else delta = clamp( rnd(-2.2, -0.2), -3.0, 0.2);
+    
+    const keys = ["shooting","finishing","playmaking","defense","rebounding","stamina","dunking","passing","leadership"];
+    keys.forEach(k=>{ 
+      if(["shooting","finishing","playmaking","defense","rebounding"].includes(k)) {
+        p.ratings[k] = clamp(Math.round(p.ratings[k] + delta + rnd(-0.4,0.4)), 40, 99);
+      } else {
+        p.ratings[k] = clamp(Math.round(p.ratings[k] + delta*0.7 + rnd(-0.3,0.3)), 40, 99);
+      }
+    });
+  }
+  
+  // Recalculate overall rating
   const mainStats = [p.ratings.shooting, p.ratings.finishing, p.ratings.playmaking, p.ratings.defense, p.ratings.rebounding];
   p.ratings.overall = Math.round(mainStats.reduce((a,b)=>a+b,0)/5);
   
@@ -8905,6 +9243,179 @@ function AnalyticsPanel({ game }){
           </div>
         )}
       </div>
+
+      {/* Rookie Development Analytics */}
+      {game.age <= 25 && game.rookieDevelopment && (
+        <div className="panel">
+          <h3 style={{marginBottom: '16px', color: 'var(--team-primary)'}}>🌟 Development Profile</h3>
+          
+          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px'}}>
+            {/* Work Ethic & Characteristics */}
+            <div style={{padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px'}}>
+              <h4 style={{margin: '0 0 8px 0', fontSize: '14px'}}>Player Profile</h4>
+              <div style={{fontSize: '12px', gap: '4px', display: 'flex', flexDirection: 'column'}}>
+                <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                  <span>Work Ethic:</span>
+                  <span style={{
+                    fontWeight: 'bold',
+                    color: game.rookieDevelopment.workEthic === 'elite' ? '#10b981' :
+                           game.rookieDevelopment.workEthic === 'high' ? '#22c55e' :
+                           game.rookieDevelopment.workEthic === 'average' ? '#f59e0b' :
+                           game.rookieDevelopment.workEthic === 'poor' ? '#ef4444' : '#dc2626'
+                  }}>
+                    {game.rookieDevelopment.workEthic.charAt(0).toUpperCase() + game.rookieDevelopment.workEthic.slice(1)}
+                  </span>
+                </div>
+                <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                  <span>Mental Toughness:</span>
+                  <span>{Math.round(game.rookieDevelopment.mentalToughness)}/100</span>
+                </div>
+                <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                  <span>Coachability:</span>
+                  <span>{Math.round(game.rookieDevelopment.coachability)}/100</span>
+                </div>
+                <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                  <span>Adaptability:</span>
+                  <span>{Math.round(game.rookieDevelopment.adaptability)}/100</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Development Progress */}
+            <div style={{padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px'}}>
+              <h4 style={{margin: '0 0 8px 0', fontSize: '14px'}}>Season Progress</h4>
+              {game.rookieDevelopment.yearlyProgress && game.rookieDevelopment.yearlyProgress.length > 0 ? (
+                <div style={{fontSize: '12px', gap: '6px', display: 'flex', flexDirection: 'column'}}>
+                  {game.rookieDevelopment.yearlyProgress.slice(-3).map((year, idx) => (
+                    <div key={idx} style={{
+                      display: 'flex', 
+                      justifyContent: 'space-between',
+                      padding: '4px 8px',
+                      background: year.overallChange > 0 ? 'rgba(16, 185, 129, 0.1)' : 
+                                 year.overallChange < 0 ? 'rgba(239, 68, 68, 0.1)' : 'var(--bg-tertiary)',
+                      borderRadius: '4px'
+                    }}>
+                      <span>Season {year.season}:</span>
+                      <span style={{
+                        fontWeight: 'bold',
+                        color: year.overallChange > 1 ? '#10b981' :
+                               year.overallChange > 0 ? '#22c55e' :
+                               year.overallChange < -1 ? '#ef4444' : '#f59e0b'
+                      }}>
+                        {year.overallChange > 0 ? '+' : ''}{year.overallChange} OVR
+                      </span>
+                    </div>
+                  ))}
+                  
+                  <div style={{marginTop: '8px', fontSize: '11px', opacity: '0.8'}}>
+                    <div>Avg Playing Time: {game.rookieDevelopment.yearlyProgress.slice(-1)[0]?.playingTime ? 
+                      `${(game.rookieDevelopment.yearlyProgress.slice(-1)[0].playingTime * 36).toFixed(1)} min` : 'N/A'}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{fontSize: '12px', opacity: '0.6', textAlign: 'center'}}>
+                  Complete seasons to track progress
+                </div>
+              )}
+            </div>
+
+            {/* Skill Specializations */}
+            <div style={{padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px'}}>
+              <h4 style={{margin: '0 0 8px 0', fontSize: '14px'}}>Skill Focus</h4>
+              <div style={{fontSize: '11px', gap: '4px', display: 'flex', flexDirection: 'column'}}>
+                {Object.entries(game.rookieDevelopment.skillTrajectories || {})
+                  .filter(([skill, data]) => data.specialization || data.currentMomentum > 0.3)
+                  .slice(0, 5)
+                  .map(([skill, data], idx) => (
+                    <div key={idx} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                      <span style={{textTransform: 'capitalize'}}>{skill}:</span>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '4px'}}>
+                        {data.specialization && <span style={{color: '#fbbf24'}}>⭐</span>}
+                        {data.currentMomentum > 0.3 && <span style={{color: '#10b981'}}>📈</span>}
+                        {data.currentMomentum < -0.2 && <span style={{color: '#ef4444'}}>📉</span>}
+                      </div>
+                    </div>
+                  ))}
+                {Object.entries(game.rookieDevelopment.skillTrajectories || {})
+                  .filter(([skill, data]) => data.specialization || data.currentMomentum > 0.3).length === 0 && (
+                  <div style={{opacity: '0.6', textAlign: 'center'}}>No specializations yet</div>
+                )}
+              </div>
+            </div>
+
+            {/* Development Outlook */}
+            <div style={{padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px'}}>
+              <h4 style={{margin: '0 0 8px 0', fontSize: '14px'}}>Outlook</h4>
+              <div style={{fontSize: '12px', gap: '6px', display: 'flex', flexDirection: 'column'}}>
+                <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                  <span>Potential Ceiling:</span>
+                  <span style={{fontWeight: 'bold', color: '#22c55e'}}>{game.potential} OVR</span>
+                </div>
+                <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                  <span>Remaining Growth:</span>
+                  <span style={{
+                    fontWeight: 'bold',
+                    color: (game.potential - game.ratings.overall) > 10 ? '#10b981' :
+                           (game.potential - game.ratings.overall) > 5 ? '#f59e0b' : '#ef4444'
+                  }}>
+                    +{game.potential - game.ratings.overall}
+                  </span>
+                </div>
+                <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                  <span>Breakthrough Chance:</span>
+                  <span style={{color: '#fbbf24'}}>
+                    {Math.round(game.rookieDevelopment.breakoutPotential)}%
+                  </span>
+                </div>
+                <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                  <span>Injury Resilient:</span>
+                  <span style={{color: game.rookieDevelopment.injuryResilient ? '#10b981' : '#ef4444'}}>
+                    {game.rookieDevelopment.injuryResilient ? 'Yes' : 'No'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Development Timeline */}
+          {game.rookieDevelopment.yearlyProgress && game.rookieDevelopment.yearlyProgress.length > 1 && (
+            <div style={{marginTop: '16px', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px'}}>
+              <h4 style={{margin: '0 0 12px 0', fontSize: '14px'}}>Development Timeline</h4>
+              <div style={{display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '8px'}}>
+                {game.rookieDevelopment.yearlyProgress.map((year, idx) => (
+                  <div key={idx} style={{
+                    minWidth: '120px',
+                    padding: '8px',
+                    background: 'var(--bg-tertiary)',
+                    borderRadius: '6px',
+                    textAlign: 'center',
+                    border: year.overallChange > 2 ? '2px solid #10b981' :
+                           year.overallChange < -1 ? '2px solid #ef4444' : '1px solid transparent'
+                  }}>
+                    <div style={{fontSize: '12px', fontWeight: 'bold'}}>Season {year.season}</div>
+                    <div style={{fontSize: '11px', opacity: '0.8'}}>Age {year.age}</div>
+                    <div style={{
+                      fontSize: '14px', 
+                      fontWeight: 'bold', 
+                      margin: '4px 0',
+                      color: year.overallChange > 1 ? '#10b981' :
+                             year.overallChange > 0 ? '#22c55e' :
+                             year.overallChange < -1 ? '#ef4444' : '#f59e0b'
+                    }}>
+                      {year.overallChange > 0 ? '+' : ''}{year.overallChange}
+                    </div>
+                    <div style={{fontSize: '10px', opacity: '0.7'}}>
+                      {year.teamSuccess > 0.6 ? '🏆' : year.teamSuccess > 0.4 ? '⚖️' : '📉'} Team
+                    </div>
+                    {year.injuries && <div style={{fontSize: '10px', color: '#ef4444'}}>🩹 Injuries</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
     </div>
   );
