@@ -341,6 +341,406 @@ const generatePersonalityEvent = (player) => {
   return selectedEvent.message;
 };
 
+// Player Holdouts System Configuration
+const HOLDOUT_CONFIG = {
+  // Conditions that can trigger holdouts
+  triggers: {
+    contractDissatisfaction: {
+      threshold: 40, // Morale factor below this triggers concern
+      weight: 0.35   // How much this contributes to holdout likelihood
+    },
+    playingTime: {
+      threshold: 50, // Playing time satisfaction below this
+      weight: 0.25
+    },
+    teamPerformance: {
+      threshold: 45, // Team performance satisfaction below this
+      weight: 0.15
+    },
+    roleClarity: {
+      threshold: 35, // Role clarity below this
+      weight: 0.15
+    },
+    marketSize: {
+      threshold: 30, // Market size satisfaction below this (for ambitious players)
+      weight: 0.10
+    }
+  },
+  
+  // Personality traits that affect holdout likelihood
+  personalityModifiers: {
+    ambition: { high: 1.4, threshold: 80 },      // Ambitious players more likely to hold out
+    selfishness: { high: 1.3, threshold: 75 },   // Selfish players focus on themselves
+    loyalty: { low: 1.2, threshold: 40 },        // Disloyal players more willing to force trades
+    competitiveness: { high: 1.1, threshold: 85 } // Competitive players want to win
+  },
+  
+  // Types of holdouts with different severity
+  holdoutTypes: {
+    soft: {
+      name: 'Soft Holdout',
+      description: 'Skipping optional team activities',
+      gameImpact: 0.85,     // 15% performance penalty
+      moraleImpact: -5,     // Weekly morale hit
+      mediaAttention: 0.3,  // Low media coverage
+      resolutionDifficulty: 0.6
+    },
+    firm: {
+      name: 'Firm Holdout', 
+      description: 'Refusing to participate in practices',
+      gameImpact: 0.70,     // 30% performance penalty
+      moraleImpact: -10,    // Higher weekly morale hit
+      mediaAttention: 0.6,  // Moderate media coverage
+      resolutionDifficulty: 0.8
+    },
+    hard: {
+      name: 'Hard Holdout',
+      description: 'Refusing to play in games',
+      gameImpact: 0.0,      // Cannot play
+      moraleImpact: -15,    // Severe weekly morale hit
+      mediaAttention: 1.0,  // High media coverage
+      resolutionDifficulty: 1.0
+    }
+  }
+};
+
+function initializeHoldoutSystem(player) {
+  if (!player.holdoutStatus) {
+    player.holdoutStatus = {
+      isHoldingOut: false,
+      holdoutType: null,
+      startWeek: null,
+      duration: 0,
+      demands: [],
+      publicStatements: [],
+      mediaReactions: [],
+      resolutionAttempts: 0,
+      lastEvaluation: 0
+    };
+  }
+}
+
+function evaluateHoldoutRisk(player) {
+  initializeHoldoutSystem(player);
+  
+  if (player.holdoutStatus.isHoldingOut) return 0; // Already holding out
+  if (player.age < 21 || player.contract.year <= 2) return 0; // Rookies rarely hold out
+  
+  let holdoutScore = 0;
+  const factors = player.moraleFactors || {};
+  
+  // Evaluate each trigger condition
+  Object.entries(HOLDOUT_CONFIG.triggers).forEach(([trigger, config]) => {
+    const factorValue = factors[trigger] || 70;
+    if (factorValue < config.threshold) {
+      const severity = (config.threshold - factorValue) / config.threshold;
+      holdoutScore += severity * config.weight;
+    }
+  });
+  
+  // Apply personality modifiers
+  if (player.personalityTraits) {
+    const traits = player.personalityTraits;
+    
+    Object.entries(HOLDOUT_CONFIG.personalityModifiers).forEach(([trait, modifier]) => {
+      const traitValue = traits[trait] || 50;
+      
+      if (trait === 'loyalty' && traitValue < modifier.threshold) {
+        holdoutScore *= modifier.low;
+      } else if (traitValue > modifier.threshold) {
+        holdoutScore *= modifier.high;
+      }
+    });
+  }
+  
+  // Contract situation modifiers
+  if (player.contract.year >= player.contract.years - 1) {
+    holdoutScore *= 1.5; // Final year or approaching free agency
+  }
+  
+  // Overall rating modifier - stars more likely to hold out
+  if (player.ratings.overall >= 85) {
+    holdoutScore *= 1.3;
+  } else if (player.ratings.overall >= 80) {
+    holdoutScore *= 1.1;
+  }
+  
+  // Team performance modifier
+  const teamWinPct = (player.stats?.wins || 0) / Math.max(1, (player.stats?.games || 1));
+  if (teamWinPct < 0.4) {
+    holdoutScore *= 1.2; // Losing teams create more dissatisfaction
+  }
+  
+  return Math.min(1.0, holdoutScore);
+}
+
+function generateHoldoutDemands(player) {
+  const demands = [];
+  const factors = player.moraleFactors || {};
+  
+  // Contract-related demands
+  if (factors.contractStatus < 40) {
+    demands.push({
+      type: 'contract_extension',
+      description: 'Long-term contract extension',
+      priority: 'high',
+      difficulty: 0.8
+    });
+    demands.push({
+      type: 'salary_increase',
+      description: 'Significant salary increase',
+      priority: 'high', 
+      difficulty: 0.9
+    });
+  }
+  
+  // Playing time demands
+  if (factors.playingTime < 50 && player.ratings.overall >= 75) {
+    demands.push({
+      type: 'more_minutes',
+      description: 'Increased playing time and role',
+      priority: 'medium',
+      difficulty: 0.6
+    });
+  }
+  
+  // Team improvement demands
+  if (factors.teamPerformance < 45) {
+    demands.push({
+      type: 'roster_improvements', 
+      description: 'Better supporting cast',
+      priority: 'medium',
+      difficulty: 0.8
+    });
+  }
+  
+  // Trade demands (last resort)
+  if (demands.length === 0 || Math.random() < 0.3) {
+    demands.push({
+      type: 'trade_request',
+      description: 'Trade to contending team',
+      priority: 'high',
+      difficulty: 1.0
+    });
+  }
+  
+  return demands.slice(0, 3); // Maximum 3 demands
+}
+
+function initiateHoldout(player) {
+  initializeHoldoutSystem(player);
+  
+  const holdoutScore = evaluateHoldoutRisk(player);
+  if (holdoutScore < 0.5) return false; // Not dissatisfied enough
+  
+  // Determine holdout type based on severity
+  let holdoutType;
+  if (holdoutScore >= 0.8) {
+    holdoutType = 'hard';
+  } else if (holdoutScore >= 0.6) {
+    holdoutType = 'firm';
+  } else {
+    holdoutType = 'soft';
+  }
+  
+  const demands = generateHoldoutDemands(player);
+  
+  player.holdoutStatus = {
+    isHoldingOut: true,
+    holdoutType,
+    startWeek: player.week,
+    duration: 1,
+    demands,
+    publicStatements: [generateHoldoutStatement(player, demands)],
+    mediaReactions: [],
+    resolutionAttempts: 0,
+    lastEvaluation: player.week
+  };
+  
+  // Immediate effects
+  updateMoraleFromEvent(player, 'teammate_conflict');
+  player.fame = clamp(player.fame + 5, 0, 100); // Increased media attention
+  
+  return true;
+}
+
+function generateHoldoutStatement(player, demands) {
+  const statements = [
+    `"I love this city and the fans, but I need to see commitment from the organization."`,
+    `"I've given everything to this team. Now I need them to show they're serious about winning."`,
+    `"This isn't just about me - it's about building a championship culture."`,
+    `"I want to be here long-term, but we need to address some issues first."`,
+    `"I'm not trying to be difficult, but I have to look out for my future."`
+  ];
+  
+  const demandTypes = demands.map(d => d.type);
+  let context = "";
+  
+  if (demandTypes.includes('trade_request')) {
+    context = " I think it might be best for everyone if I played elsewhere.";
+  } else if (demandTypes.includes('contract_extension')) {
+    context = " I want to retire here, but I need security for my family.";
+  } else if (demandTypes.includes('roster_improvements')) {
+    context = " We need to make moves to compete at the highest level.";
+  }
+  
+  return pick(statements) + context;
+}
+
+function updateHoldoutStatus(player) {
+  if (!player.holdoutStatus?.isHoldingOut) return;
+  
+  const holdout = player.holdoutStatus;
+  const holdoutConfig = HOLDOUT_CONFIG.holdoutTypes[holdout.holdoutType];
+  
+  holdout.duration++;
+  
+  // Apply weekly effects
+  updateMoraleFromEvent(player, 'contract_dispute');
+  player.morale = clamp(player.morale + holdoutConfig.moraleImpact, 0, 100);
+  
+  // Generate media reaction
+  if (holdout.duration % 2 === 0 && Math.random() < holdoutConfig.mediaAttention) {
+    const reaction = generateMediaReaction(player, holdout);
+    holdout.mediaReactions.push(reaction);
+  }
+  
+  // Escalation chance
+  if (holdout.duration > 3 && holdout.holdoutType !== 'hard' && Math.random() < 0.2) {
+    escalateHoldout(player);
+  }
+  
+  // Team chemistry impact
+  player.teamChem = clamp(player.teamChem - 2, 0, 100);
+}
+
+function escalateHoldout(player) {
+  const current = player.holdoutStatus.holdoutType;
+  if (current === 'soft') {
+    player.holdoutStatus.holdoutType = 'firm';
+    player.holdoutStatus.publicStatements.push(
+      `"I'm disappointed it's come to this, but I won't be attending practices until we reach an agreement."`
+    );
+  } else if (current === 'firm') {
+    player.holdoutStatus.holdoutType = 'hard';
+    player.holdoutStatus.publicStatements.push(
+      `"I will not play in games until my situation is resolved. This is not a decision I made lightly."`
+    );
+  }
+}
+
+function generateMediaReaction(player, holdout) {
+  const reactions = [
+    `ESPN: "${player.firstName} ${player.lastName} holdout continues - sources say negotiations remain stalled"`,
+    `The Athletic: "Team officials express frustration with ${player.lastName}'s demands"`,
+    `Yahoo Sports: "Fans divided on ${player.firstName} ${player.lastName} holdout situation"`,
+    `NBA Insider: "League sources suggest ${player.lastName} situation could drag into regular season"`,
+    `Sports Center: "${player.lastName} camp remains firm on their position despite criticism"`
+  ];
+  
+  return {
+    week: player.week,
+    reaction: pick(reactions),
+    impact: holdout.holdoutType === 'hard' ? 'high' : holdout.holdoutType === 'firm' ? 'medium' : 'low'
+  };
+}
+
+function attemptHoldoutResolution(player, resolutionType, offerDetails = {}) {
+  if (!player.holdoutStatus?.isHoldingOut) return false;
+  
+  const holdout = player.holdoutStatus;
+  const holdoutConfig = HOLDOUT_CONFIG.holdoutTypes[holdout.holdoutType];
+  holdout.resolutionAttempts++;
+  
+  let successChance = 0.3; // Base success chance
+  
+  // Evaluate resolution based on type and player demands
+  switch (resolutionType) {
+    case 'contract_extension':
+      if (holdout.demands.some(d => d.type === 'contract_extension')) {
+        successChance = 0.8;
+      }
+      break;
+    case 'salary_increase':
+      if (holdout.demands.some(d => d.type === 'salary_increase')) {
+        successChance = 0.7;
+      }
+      break;
+    case 'role_increase':
+      if (holdout.demands.some(d => d.type === 'more_minutes')) {
+        successChance = 0.6;
+      }
+      break;
+    case 'trade':
+      successChance = 0.9; // Trading usually resolves holdouts
+      break;
+    case 'compromise':
+      successChance = 0.5;
+      break;
+  }
+  
+  // Apply difficulty modifier
+  successChance *= (1 - holdoutConfig.resolutionDifficulty * 0.3);
+  
+  // Duration penalty - longer holdouts harder to resolve
+  successChance *= Math.max(0.3, 1 - (holdout.duration * 0.1));
+  
+  if (Math.random() < successChance) {
+    resolveHoldout(player, resolutionType, offerDetails);
+    return true;
+  } else {
+    // Failed resolution attempt
+    holdout.publicStatements.push(
+      `"The latest offer doesn't address our core concerns. We remain committed to finding a solution."`
+    );
+    return false;
+  }
+}
+
+function resolveHoldout(player, resolutionType, offerDetails) {
+  const holdout = player.holdoutStatus;
+  
+  // Apply resolution effects
+  switch (resolutionType) {
+    case 'contract_extension':
+      player.contract.years += (offerDetails.additionalYears || 2);
+      player.contract.salary = Math.round(player.contract.salary * (offerDetails.salaryIncrease || 1.3));
+      updateMoraleFromEvent(player, 'contract_extension');
+      break;
+    case 'salary_increase':
+      player.contract.salary = Math.round(player.contract.salary * (offerDetails.increase || 1.4));
+      updateMoraleFromEvent(player, 'salary_increase');
+      break;
+    case 'role_increase':
+      updateMoraleFromEvent(player, 'role_promotion');
+      break;
+    case 'trade':
+      // Note: Actual trade would need to be handled separately
+      break;
+    case 'compromise':
+      player.contract.salary = Math.round(player.contract.salary * 1.1);
+      updateMoraleFromEvent(player, 'compromise_reached');
+      break;
+  }
+  
+  // End holdout
+  player.holdoutStatus.isHoldingOut = false;
+  player.holdoutStatus.publicStatements.push(
+    `"I'm excited to get back to focusing on basketball and helping this team win. Thank you to the fans for their patience."`
+  );
+  
+  // Restore team chemistry gradually
+  player.teamChem = clamp(player.teamChem + 10, 0, 100);
+  player.morale = clamp(player.morale + 15, 0, 100);
+}
+
+function getHoldoutGameImpact(player) {
+  if (!player.holdoutStatus?.isHoldingOut) return 1.0;
+  
+  const holdoutType = player.holdoutStatus.holdoutType;
+  return HOLDOUT_CONFIG.holdoutTypes[holdoutType].gameImpact;
+}
+
 // Personality affects contract negotiations
 const getPersonalityContractModifier = (player, offerIncrease) => {
   if (!player.personalityTraits) return 1.0;
@@ -4542,10 +4942,31 @@ export default function BasketballLife(){
         p.teamChem = irnd(25, 65); // Fresh start uncertainty (slightly lower)
         p.teamStrength = irnd(60, 90);
         p.teamStanding = irnd(5, 20);
+        
+        // Check if this resolves a holdout
+        if (p.holdoutStatus?.isHoldingOut) {
+          const success = attemptHoldoutResolution(p, 'trade');
+          if (success) {
+            p.career.timeline.push(event("Holdout", `Holdout resolved through successful trade to ${p.team}.`));
+            pushToast("🤝 Holdout resolved through trade!");
+          }
+        }
+        
         p.career.timeline.push(event("Trade", `Successfully traded from ${oldTeam} to ${p.team}.`));
         pushToast("Trade request approved!");
       } else {
         p.morale = clamp(p.morale - 8, 0, 100); // Increased morale penalty
+        
+        // Failed trade request can worsen holdout situation
+        if (p.holdoutStatus?.isHoldingOut) {
+          p.holdoutStatus.resolutionAttempts++;
+          // Trade demands that fail increase likelihood of escalation
+          if (p.holdoutStatus.demands.some(d => d.type === 'trade_request')) {
+            updateMoraleFromEvent(p, 'contract_dispute');
+            p.career.timeline.push(event("Holdout", `Trade demand rejected - situation grows more tense.`));
+          }
+        }
+        
         p.career.timeline.push(event("Trade", "Trade request denied by management."));
         pushToast("Trade request denied");
       }
@@ -4640,12 +5061,38 @@ export default function BasketballLife(){
         const contractSatisfaction = increase > 0 ? Math.min(20, increase / 10) : 5;
         updateMoraleFromEvent(p, 'contract_signed', { satisfaction: contractSatisfaction });
         
+        // Check if this resolves a holdout
+        if (p.holdoutStatus?.isHoldingOut) {
+          const resolutionType = increase > currentValue * 0.2 ? 'contract_extension' : 'compromise';
+          const success = attemptHoldoutResolution(p, resolutionType, {
+            additionalYears: contractYears - p.contract.year,
+            salaryIncrease: increase / currentValue + 1,
+            increase: increase / currentValue + 1
+          });
+          
+          if (success) {
+            p.career.timeline.push(event("Holdout", `Holdout resolved through successful contract negotiation.`));
+            pushToast("🤝 Holdout resolved!");
+          }
+        }
+        
         const contractType = isExtension ? "Extension" : "Contract";
         p.career.timeline.push(event(contractType, `${contractType} signed: $${newValue}k/year for ${contractYears} years (${increase > 0 ? '+' : ''}$${increase}k/year).`));
         pushToast(`${contractType} signed: $${newValue}k/year!`);
       } else {
         updateMoraleFromEvent(p, 'contract_dispute');
         p.morale = clamp(p.morale - (isExtension ? 3 : 6), 0, 100); // Less penalty for failed extensions
+        
+        // Failed negotiation can escalate holdout situation
+        if (p.holdoutStatus?.isHoldingOut) {
+          p.holdoutStatus.resolutionAttempts++;
+          if (p.holdoutStatus.resolutionAttempts >= 3 && p.holdoutStatus.holdoutType !== 'hard') {
+            escalateHoldout(p);
+            p.career.timeline.push(event("Holdout", `Failed negotiations lead to holdout escalation.`));
+            pushToast("🚫 Holdout situation worsens!");
+          }
+        }
+        
         const failureType = isExtension ? "Extension" : "Contract";
         p.career.timeline.push(event(failureType, `${failureType} negotiation rejected by management.`));
         pushToast(`${failureType} request denied - ${isExtension ? 'try again later' : 'improve performance'}`);
@@ -4979,6 +5426,33 @@ export default function BasketballLife(){
         p.career.timeline.push(event("Morale", moraleEvent));
       }
 
+      // Initialize holdout system if needed
+      initializeHoldoutSystem(p);
+      
+      // Check for potential holdout initiation
+      if (!p.holdoutStatus.isHoldingOut) {
+        const holdoutRisk = evaluateHoldoutRisk(p);
+        if (holdoutRisk > 0.6 && Math.random() < holdoutRisk * 0.1) { // 10% max chance per week
+          if (initiateHoldout(p)) {
+            const holdoutConfig = HOLDOUT_CONFIG.holdoutTypes[p.holdoutStatus.holdoutType];
+            p.career.timeline.push(event("Holdout", 
+              `Started ${holdoutConfig.name.toLowerCase()}: ${holdoutConfig.description}`
+            ));
+            pushToast(`🚫 ${p.firstName} ${p.lastName} is holding out!`);
+          }
+        }
+      } else {
+        // Update existing holdout
+        updateHoldoutStatus(p);
+        
+        // Add timeline update for ongoing holdout
+        if (p.holdoutStatus.duration % 3 === 0) { // Every 3 weeks
+          p.career.timeline.push(event("Holdout", 
+            `Holdout continues into week ${p.holdoutStatus.duration}. Situation remains unresolved.`
+          ));
+        }
+      }
+
       // Weekly tick: chance of minor injury if peak is low
       if(p.peak < 25 && chance(0.15)){ 
         p.health = clamp(p.health - irnd(5,12), 0, 100); 
@@ -5157,6 +5631,14 @@ export default function BasketballLife(){
         }
       }
       
+      // Check for holdout impact
+      const holdoutImpact = getHoldoutGameImpact(p);
+      if (holdoutImpact === 0.0) {
+        // Hard holdout - player refuses to play
+        p.career.timeline.push(event("Holdout", `Missed game due to ongoing holdout.`));
+        continue;
+      }
+      
       if (missGame) {
         p.career.timeline.push(event("Rest", `Missed game due to ${missReason}.`));
         continue;
@@ -5184,6 +5666,21 @@ export default function BasketballLife(){
       const mockTeammates = [p]; // In full game would be actual teammates
       const chemistryBonus = getChemistryPerformanceBonus(p, mockTeammates);
       performanceModifier *= chemistryBonus;
+      
+      // Apply holdout performance impact
+      performanceModifier *= holdoutImpact;
+      
+      // Add holdout distraction if player is holding out
+      if (p.holdoutStatus?.isHoldingOut && holdoutImpact < 1.0) {
+        // Soft/firm holdouts cause performance issues and chemistry problems
+        p.teamChem = clamp(p.teamChem - 1, 0, 100);
+        if (g === 0) { // Only show once per simulation
+          const holdoutType = HOLDOUT_CONFIG.holdoutTypes[p.holdoutStatus.holdoutType];
+          p.career.timeline.push(event("Holdout", 
+            `Performance affected by ongoing ${holdoutType.name.toLowerCase()}`
+          ));
+        }
+      }
       
       const perf = playerGameSim(p, performanceModifier);
       
@@ -8674,6 +9171,56 @@ function TeamPanel({ game, avg, onTrade, onContract }){
           <button className="btn btn-primary btn-sm" onClick={onContract}>Renegotiate</button>
           <button className="btn btn-secondary btn-sm" onClick={onTrade}>Request Trade</button>
         </div>
+        
+        {/* Holdout Status */}
+        {game.holdoutStatus?.isHoldingOut && (
+          <div style={{marginTop: '12px', padding: '12px', background: 'rgba(239,68,68,0.1)', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.3)'}}>
+            <h4 style={{margin: '0 0 8px 0', color: '#ef4444', fontSize: '14px'}}>
+              🚫 Active Holdout
+            </h4>
+            <div style={{fontSize: '12px', marginBottom: '8px'}}>
+              <div><strong>Type:</strong> {HOLDOUT_CONFIG.holdoutTypes[game.holdoutStatus.holdoutType].name}</div>
+              <div><strong>Duration:</strong> {game.holdoutStatus.duration} weeks</div>
+              <div><strong>Demands:</strong> {game.holdoutStatus.demands.length}</div>
+            </div>
+            
+            <div style={{fontSize: '11px', marginBottom: '8px'}}>
+              <strong>Latest Statement:</strong>
+              <div style={{fontStyle: 'italic', opacity: 0.8, marginTop: '4px'}}>
+                {game.holdoutStatus.publicStatements[game.holdoutStatus.publicStatements.length - 1]}
+              </div>
+            </div>
+            
+            <div style={{display: 'flex', gap: '4px', flexWrap: 'wrap'}}>
+              {game.holdoutStatus.demands.map((demand, idx) => (
+                <div key={idx} style={{
+                  padding: '2px 6px',
+                  background: 'rgba(239,68,68,0.2)',
+                  borderRadius: '4px',
+                  fontSize: '10px',
+                  color: '#ef4444'
+                }}>
+                  {demand.description}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {/* Holdout Risk Warning */}
+        {!game.holdoutStatus?.isHoldingOut && (() => {
+          const holdoutRisk = evaluateHoldoutRisk(game);
+          return holdoutRisk > 0.4 ? (
+            <div style={{marginTop: '12px', padding: '10px', background: 'rgba(245,158,11,0.1)', borderRadius: '8px', border: '1px solid rgba(245,158,11,0.3)'}}>
+              <h4 style={{margin: '0 0 6px 0', color: '#f59e0b', fontSize: '13px'}}>
+                ⚠️ Holdout Risk: {holdoutRisk > 0.7 ? 'High' : holdoutRisk > 0.5 ? 'Medium' : 'Low'}
+              </h4>
+              <div style={{fontSize: '11px', opacity: 0.9}}>
+                Player satisfaction is declining. Consider addressing concerns before situation escalates.
+              </div>
+            </div>
+          ) : null;
+        })()}
       </div>
 
       {/* Conference Standings */}
@@ -12518,6 +13065,11 @@ function loadGame(){
     // Backward compatibility: Add appearance if missing
     if (game && !game.appearance) {
       game.appearance = generateAppearance();
+    }
+    
+    // Backward compatibility: Initialize holdout system if missing
+    if (game && !game.holdoutStatus) {
+      initializeHoldoutSystem(game);
     }
     
     return game;
