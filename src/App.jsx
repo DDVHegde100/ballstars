@@ -341,6 +341,552 @@ const generatePersonalityEvent = (player) => {
   return selectedEvent.message;
 };
 
+// Veteran Leadership System Configuration
+const VETERAN_LEADERSHIP_CONFIG = {
+  // Age and experience thresholds for veteran status
+  veteranThresholds: {
+    young: { minAge: 19, maxAge: 23, experience: 0 },
+    developing: { minAge: 24, maxAge: 26, experience: 3 },
+    prime: { minAge: 27, maxAge: 30, experience: 5 },
+    veteran: { minAge: 31, maxAge: 34, experience: 8 },
+    elder: { minAge: 35, maxAge: 40, experience: 12 }
+  },
+  
+  // Leadership effectiveness based on player attributes
+  leadershipFactors: {
+    overall: { 
+      weight: 0.4,
+      thresholds: { elite: 90, high: 85, good: 80, average: 75 }
+    },
+    personality: {
+      leadership: { weight: 0.3, threshold: 70 },
+      workEthic: { weight: 0.15, threshold: 75 },
+      loyalty: { weight: 0.1, threshold: 65 },
+      competitiveness: { weight: 0.05, threshold: 80 }
+    },
+    achievements: {
+      championships: { weight: 0.2, multiplier: 15 },
+      allStars: { weight: 0.1, multiplier: 5 },
+      mvps: { weight: 0.15, multiplier: 20 },
+      dpoys: { weight: 0.05, multiplier: 10 }
+    },
+    teamTenure: {
+      weight: 0.1,
+      bonusPerYear: 2,
+      maxBonus: 20
+    }
+  },
+  
+  // Development bonuses that veterans provide
+  developmentBonuses: {
+    // Skill-specific mentoring
+    skillMentoring: {
+      shooting: { veteranMin: 80, bonus: 0.3 },
+      defense: { veteranMin: 85, bonus: 0.25 },
+      playmaking: { veteranMin: 75, bonus: 0.35 },
+      leadership: { veteranMin: 70, bonus: 0.4 },
+      professionalism: { veteranMin: 80, bonus: 0.2 }
+    },
+    
+    // Age-based learning rates
+    ageLearningRates: {
+      19: 1.4,  // Rookies learn fastest from veterans
+      20: 1.3,
+      21: 1.25,
+      22: 1.2,
+      23: 1.15,
+      24: 1.1,
+      25: 1.05,
+      26: 1.0   // Prime players learn normally
+    },
+    
+    // Veteran presence effects
+    presenceEffects: {
+      workEthicImprovement: 0.5,    // Per season improvement
+      mentalToughnessBoost: 0.3,
+      professionalismGrowth: 0.4,
+      injuryPrevention: 0.15,       // Reduced injury risk
+      plateauBreaking: 0.2          // Helps break development plateaus
+    }
+  },
+  
+  // Team-wide veteran effects
+  teamEffects: {
+    chemistryBonus: 5,              // Team chemistry improvement
+    moraleStability: 0.8,           // Reduces morale volatility
+    clutchPerformance: 0.1,         // Better performance in important games
+    lockerRoomCulture: 0.15         // Overall team culture improvement
+  }
+};
+
+function initializeVeteranLeadership(player) {
+  if (!player.veteranLeadership) {
+    player.veteranLeadership = {
+      leadershipRating: 0,
+      mentoringAbility: 0,
+      veteranStatus: getVeteranStatus(player),
+      mentorshipHistory: [],
+      leadershipGrowth: [],
+      cultureImpact: 0,
+      seasonContributions: [],
+      lastEvaluation: 0
+    };
+  }
+  updateVeteranLeadershipRating(player);
+}
+
+function getVeteranStatus(player) {
+  const age = player.age;
+  const experience = player.career?.seasons?.length || 0;
+  
+  for (const [status, thresholds] of Object.entries(VETERAN_LEADERSHIP_CONFIG.veteranThresholds)) {
+    if (age >= thresholds.minAge && age <= thresholds.maxAge && experience >= thresholds.experience) {
+      return status;
+    }
+  }
+  
+  // Fallback based on age if experience data is missing
+  if (age <= 23) return 'young';
+  if (age <= 26) return 'developing';
+  if (age <= 30) return 'prime';
+  if (age <= 34) return 'veteran';
+  return 'elder';
+}
+
+function calculateLeadershipRating(player) {
+  let rating = 0;
+  const factors = VETERAN_LEADERSHIP_CONFIG.leadershipFactors;
+  
+  // Overall rating contribution
+  const overallContribution = Math.min(100, player.ratings.overall) * factors.overall.weight;
+  rating += overallContribution;
+  
+  // Personality traits contribution
+  if (player.personalityTraits) {
+    Object.entries(factors.personality).forEach(([trait, config]) => {
+      const traitValue = player.personalityTraits[trait] || 50;
+      if (traitValue >= config.threshold) {
+        rating += (traitValue - config.threshold) * config.weight;
+      }
+    });
+  }
+  
+  // Achievements contribution
+  const achievements = player.career?.totals || {};
+  Object.entries(factors.achievements).forEach(([achievement, config]) => {
+    const count = achievements[achievement] || 0;
+    rating += count * config.multiplier * config.weight;
+  });
+  
+  // Team tenure bonus (if available)
+  const teamTenure = player.teamTenure || 1;
+  const tenureBonus = Math.min(factors.teamTenure.maxBonus, teamTenure * factors.teamTenure.bonusPerYear);
+  rating += tenureBonus * factors.teamTenure.weight;
+  
+  return Math.min(100, Math.max(0, rating));
+}
+
+function updateVeteranLeadershipRating(player) {
+  if (!player.veteranLeadership) return;
+  
+  const newRating = calculateLeadershipRating(player);
+  const oldRating = player.veteranLeadership.leadershipRating;
+  
+  player.veteranLeadership.leadershipRating = newRating;
+  player.veteranLeadership.veteranStatus = getVeteranStatus(player);
+  
+  // Calculate mentoring ability based on leadership and veteran status
+  const statusMultipliers = {
+    young: 0.2,
+    developing: 0.5,
+    prime: 0.8,
+    veteran: 1.2,
+    elder: 1.0 // Slight decline due to age
+  };
+  
+  const statusMultiplier = statusMultipliers[player.veteranLeadership.veteranStatus] || 0.5;
+  player.veteranLeadership.mentoringAbility = (newRating * statusMultiplier) / 100;
+  
+  // Track leadership growth
+  if (Math.abs(newRating - oldRating) >= 5) {
+    player.veteranLeadership.leadershipGrowth.push({
+      season: player.season,
+      change: newRating - oldRating,
+      newRating: newRating
+    });
+    
+    // Keep only last 5 years
+    if (player.veteranLeadership.leadershipGrowth.length > 5) {
+      player.veteranLeadership.leadershipGrowth = player.veteranLeadership.leadershipGrowth.slice(-5);
+    }
+  }
+}
+
+function applyVeteranMentorship(player, teammates) {
+  if (!player.veteranLeadership || player.veteranLeadership.veteranStatus === 'young') return;
+  
+  initializeVeteranLeadership(player);
+  
+  const veteranRating = player.veteranLeadership.leadershipRating;
+  const mentoringAbility = player.veteranLeadership.mentoringAbility;
+  
+  if (veteranRating < 40 || mentoringAbility < 0.3) return; // Not effective enough as mentor
+  
+  // Find younger teammates who can benefit
+  const youngerTeammates = teammates.filter(teammate => {
+    const teammateAge = teammate.age || 25; // Default age if missing
+    return teammateAge < player.age - 3 && teammateAge <= 26; // Must be significantly younger and under 27
+  });
+  
+  youngerTeammates.forEach(teammate => {
+    applyVeteranBonusToPlayer(player, teammate);
+  });
+  
+  // Track mentorship activity
+  if (youngerTeammates.length > 0) {
+    player.veteranLeadership.mentorshipHistory.push({
+      season: player.season,
+      mentoredPlayers: youngerTeammates.length,
+      effectiveness: mentoringAbility
+    });
+    
+    // Keep only last 3 years of history
+    if (player.veteranLeadership.mentorshipHistory.length > 3) {
+      player.veteranLeadership.mentorshipHistory = player.veteranLeadership.mentorshipHistory.slice(-3);
+    }
+  }
+}
+
+function applyVeteranBonusToPlayer(veteran, youngPlayer) {
+  if (!youngPlayer.rookieDevelopment) {
+    initializeRookieDevelopment(youngPlayer);
+  }
+  
+  const veteranRating = veteran.veteranLeadership?.leadershipRating || 0;
+  const mentoringAbility = veteran.veteranLeadership?.mentoringAbility || 0;
+  const youngPlayerAge = youngPlayer.age || 22;
+  
+  // Age-based learning multiplier
+  const ageLearningRate = VETERAN_LEADERSHIP_CONFIG.developmentBonuses.ageLearningRates[youngPlayerAge] || 1.0;
+  
+  // Base veteran bonus
+  let veteranBonus = mentoringAbility * ageLearningRate * 0.5; // Base 50% of mentoring ability
+  
+  // Skill-specific mentoring bonuses
+  const skillBonuses = VETERAN_LEADERSHIP_CONFIG.developmentBonuses.skillMentoring;
+  Object.entries(skillBonuses).forEach(([skill, config]) => {
+    if (veteran.ratings[skill] >= config.veteranMin) {
+      const skillSpecificBonus = config.bonus * mentoringAbility;
+      
+      if (skill === 'professionalism') {
+        // Professionalism affects multiple aspects
+        youngPlayer.rookieDevelopment.workEthic = Math.min('elite', 
+          improveworkEthicLevel(youngPlayer.rookieDevelopment.workEthic, skillSpecificBonus)
+        );
+        youngPlayer.rookieDevelopment.mentalToughness = Math.min(100, 
+          youngPlayer.rookieDevelopment.mentalToughness + skillSpecificBonus * 10
+        );
+      } else if (youngPlayer.ratings[skill]) {
+        // Apply bonus to skill development trajectory
+        if (youngPlayer.rookieDevelopment.skillTrajectories[skill]) {
+          youngPlayer.rookieDevelopment.skillTrajectories[skill].currentMomentum += skillSpecificBonus;
+          youngPlayer.rookieDevelopment.skillTrajectories[skill].currentMomentum = Math.min(1.5, 
+            youngPlayer.rookieDevelopment.skillTrajectories[skill].currentMomentum
+          );
+        }
+      }
+    }
+  });
+  
+  // General development improvements
+  const effects = VETERAN_LEADERSHIP_CONFIG.developmentBonuses.presenceEffects;
+  
+  // Work ethic improvement
+  const workEthicImprovement = effects.workEthicImprovement * mentoringAbility;
+  if (Math.random() < workEthicImprovement && youngPlayer.rookieDevelopment.workEthic !== 'elite') {
+    youngPlayer.rookieDevelopment.workEthic = improveworkEthicLevel(youngPlayer.rookieDevelopment.workEthic, 0.3);
+  }
+  
+  // Mental toughness boost
+  youngPlayer.rookieDevelopment.mentalToughness = Math.min(100, 
+    youngPlayer.rookieDevelopment.mentalToughness + effects.mentalToughnessBoost * mentoringAbility
+  );
+  
+  // Coachability improvement
+  youngPlayer.rookieDevelopment.coachability = Math.min(100,
+    youngPlayer.rookieDevelopment.coachability + effects.professionalismGrowth * mentoringAbility
+  );
+  
+  // Plateau breaking assistance
+  if (mentoringAbility > 0.7 && Math.random() < effects.plateauBreaking) {
+    youngPlayer.rookieDevelopment.plateauRisk = Math.max(0, 
+      youngPlayer.rookieDevelopment.plateauRisk - 0.1
+    );
+    youngPlayer.rookieDevelopment.breakoutPotential = Math.min(100,
+      youngPlayer.rookieDevelopment.breakoutPotential + 10
+    );
+  }
+  
+  // Injury prevention mentoring
+  if (youngPlayer.injurySusceptibility) {
+    Object.keys(youngPlayer.injurySusceptibility).forEach(injuryType => {
+      youngPlayer.injurySusceptibility[injuryType] *= (1 - effects.injuryPrevention * mentoringAbility);
+    });
+  }
+}
+
+function improveworkEthicLevel(currentLevel, improvement) {
+  const levels = ['concerning', 'poor', 'average', 'high', 'elite'];
+  const currentIndex = levels.indexOf(currentLevel);
+  if (currentIndex === -1) return currentLevel;
+  
+  if (improvement > 0.3 && currentIndex < levels.length - 1) {
+    return levels[currentIndex + 1];
+  }
+  return currentLevel;
+}
+
+function calculateTeamVeteranEffects(player, teammates) {
+  const allPlayers = [player, ...teammates];
+  const veterans = allPlayers.filter(p => {
+    const status = getVeteranStatus(p);
+    return ['veteran', 'elder'].includes(status) && (p.veteranLeadership?.leadershipRating || 0) > 50;
+  });
+  
+  if (veterans.length === 0) return null;
+  
+  const totalLeadership = veterans.reduce((sum, vet) => sum + (vet.veteranLeadership?.leadershipRating || 0), 0);
+  const averageLeadership = totalLeadership / veterans.length;
+  const veteranCount = veterans.length;
+  
+  // Scale effects based on number and quality of veterans
+  const effectMultiplier = Math.min(1.5, (veteranCount / 3) * (averageLeadership / 100));
+  
+  return {
+    chemistryBonus: VETERAN_LEADERSHIP_CONFIG.teamEffects.chemistryBonus * effectMultiplier,
+    moraleStability: VETERAN_LEADERSHIP_CONFIG.teamEffects.moraleStability * effectMultiplier,
+    clutchBonus: VETERAN_LEADERSHIP_CONFIG.teamEffects.clutchPerformance * effectMultiplier,
+    cultureRating: VETERAN_LEADERSHIP_CONFIG.teamEffects.lockerRoomCulture * effectMultiplier,
+    veteranCount,
+    averageLeadership: Math.round(averageLeadership)
+  };
+}
+
+// ========== LUXURY TAX SYSTEM ==========
+
+const LUXURY_TAX_CONFIG = {
+  // NBA Salary Cap and Luxury Tax Thresholds (in millions)
+  salaryCap: 136.0,           // 2024-25 salary cap ($136M)
+  luxuryTaxLine: 165.0,       // 2024-25 luxury tax line ($165M)
+  apronLevel1: 178.0,         // First apron ($178M)
+  apronLevel2: 188.0,         // Second apron ($188M)
+  
+  // Progressive tax rates based on luxury tax amount
+  taxRates: {
+    // Standard luxury tax rates for non-repeat offenders
+    standard: [
+      { threshold: 0, rate: 1.50 },      // $0-5M over: $1.50 per $1
+      { threshold: 5, rate: 1.75 },      // $5-10M over: $1.75 per $1  
+      { threshold: 10, rate: 2.50 },     // $10-15M over: $2.50 per $1
+      { threshold: 15, rate: 3.25 },     // $15-20M over: $3.25 per $1
+      { threshold: 20, rate: 4.25 }      // $20M+ over: $4.25 per $1
+    ],
+    
+    // Repeat offender rates (teams that paid luxury tax in 3 of past 4 years)
+    repeat: [
+      { threshold: 0, rate: 2.50 },      // $0-5M over: $2.50 per $1
+      { threshold: 5, rate: 2.75 },      // $5-10M over: $2.75 per $1
+      { threshold: 10, rate: 3.50 },     // $10-15M over: $3.50 per $1
+      { threshold: 15, rate: 4.25 },     // $15-20M over: $4.25 per $1
+      { threshold: 20, rate: 5.25 }      // $20M+ over: $5.25 per $1
+    ]
+  },
+  
+  // Apron restrictions
+  apronRestrictions: {
+    level1: {
+      // First apron restrictions
+      midLevelException: 5.0,    // Reduced MLE to $5M
+      biAnnualException: false,  // Cannot use BAE
+      signAndTrade: false,       // Cannot acquire players via sign-and-trade
+      tradedPlayerException: false // Cannot use TPE
+    },
+    level2: {
+      // Second apron restrictions (much more severe)
+      midLevelException: 0,      // No MLE available
+      biAnnualException: false,  // Cannot use BAE
+      signAndTrade: false,       // Cannot acquire players via sign-and-trade
+      tradedPlayerException: false, // Cannot use TPE
+      freezeDraftPicks: true,    // Cannot trade first-round picks 7 years out
+      freezeTrades: true,        // Severe trade restrictions
+      noFreeAgents: true         // Cannot sign free agents above minimum
+    }
+  },
+  
+  // Luxury tax distribution and penalties
+  penalties: {
+    revenueSharingLoss: 0.5,    // 50% reduction in revenue sharing
+    draftPickPenalties: true,   // Potential draft pick forfeiture
+    competitiveBalanceTax: true  // Additional competitive balance tax
+  }
+};
+
+// Calculate luxury tax for a team's payroll
+function calculateLuxuryTax(totalPayroll, taxHistory = []) {
+  if (totalPayroll <= LUXURY_TAX_CONFIG.luxuryTaxLine) {
+    return {
+      taxAmount: 0,
+      taxRate: 0,
+      isRepeatOffender: false,
+      apronLevel: 0,
+      restrictions: {},
+      breakdown: []
+    };
+  }
+  
+  // Check if team is repeat offender (paid tax in 3 of last 4 years)
+  const recentTaxYears = taxHistory.slice(-4).filter(year => year.taxAmount > 0).length;
+  const isRepeatOffender = recentTaxYears >= 3;
+  
+  // Determine apron level
+  let apronLevel = 0;
+  let restrictions = {};
+  if (totalPayroll >= LUXURY_TAX_CONFIG.apronLevel2) {
+    apronLevel = 2;
+    restrictions = LUXURY_TAX_CONFIG.apronRestrictions.level2;
+  } else if (totalPayroll >= LUXURY_TAX_CONFIG.apronLevel1) {
+    apronLevel = 1;
+    restrictions = LUXURY_TAX_CONFIG.apronRestrictions.level1;
+  }
+  
+  // Calculate progressive tax
+  const overageAmount = totalPayroll - LUXURY_TAX_CONFIG.luxuryTaxLine;
+  const taxRates = isRepeatOffender ? 
+    LUXURY_TAX_CONFIG.taxRates.repeat : 
+    LUXURY_TAX_CONFIG.taxRates.standard;
+  
+  let totalTax = 0;
+  let remainingOverage = overageAmount;
+  const breakdown = [];
+  
+  for (let i = 0; i < taxRates.length; i++) {
+    const bracket = taxRates[i];
+    const nextThreshold = taxRates[i + 1]?.threshold || Infinity;
+    const bracketWidth = Math.min(remainingOverage, nextThreshold - bracket.threshold);
+    
+    if (bracketWidth > 0) {
+      const bracketTax = bracketWidth * bracket.rate;
+      totalTax += bracketTax;
+      
+      breakdown.push({
+        range: `$${bracket.threshold}M-${nextThreshold === Infinity ? '+' : nextThreshold + 'M'} over`,
+        amount: bracketWidth,
+        rate: bracket.rate,
+        tax: bracketTax
+      });
+      
+      remainingOverage -= bracketWidth;
+    }
+    
+    if (remainingOverage <= 0) break;
+  }
+  
+  return {
+    taxAmount: totalTax,
+    taxRate: totalTax / overageAmount,
+    isRepeatOffender,
+    apronLevel,
+    restrictions,
+    breakdown,
+    overage: overageAmount
+  };
+}
+
+// Get team's luxury tax status and effects
+function getTeamLuxuryTaxStatus(player) {
+  if (!player.teammates || !player.contract) return null;
+  
+  // Calculate total team payroll
+  const playerSalary = player.contract.salary || 0;
+  const teammateSalaries = player.teammates.reduce((sum, teammate) => 
+    sum + (teammate.salary || 0), 0);
+  const totalPayroll = playerSalary + teammateSalaries;
+  
+  // Get team's tax history from league data
+  const taxHistory = player.league?.luxuryTaxHistory?.[player.team] || [];
+  
+  // Calculate luxury tax
+  const taxStatus = calculateLuxuryTax(totalPayroll, taxHistory);
+  
+  return {
+    ...taxStatus,
+    totalPayroll,
+    salaryCap: LUXURY_TAX_CONFIG.salaryCap,
+    luxuryTaxLine: LUXURY_TAX_CONFIG.luxuryTaxLine,
+    capSpace: Math.max(0, LUXURY_TAX_CONFIG.salaryCap - totalPayroll),
+    overtaxSpace: totalPayroll - LUXURY_TAX_CONFIG.luxuryTaxLine
+  };
+}
+
+// Apply luxury tax effects to team operations
+function applyLuxuryTaxEffects(player, taxStatus) {
+  if (!taxStatus || taxStatus.taxAmount === 0) return;
+  
+  // Financial impact on team
+  if (player.league?.teams?.[player.team]) {
+    const team = player.league.teams[player.team];
+    
+    // Reduce team revenue from luxury tax
+    if (team.finances) {
+      team.finances.luxuryTaxPaid = taxStatus.taxAmount;
+      team.finances.netIncome = (team.finances.netIncome || 0) - taxStatus.taxAmount;
+      
+      // Revenue sharing penalties
+      if (taxStatus.apronLevel > 0) {
+        team.finances.revenueSharingLoss = 
+          (team.finances.revenueSharing || 0) * LUXURY_TAX_CONFIG.penalties.revenueSharingLoss;
+      }
+    }
+    
+    // Apply roster construction restrictions
+    team.luxuryTaxRestrictions = taxStatus.restrictions;
+    team.apronLevel = taxStatus.apronLevel;
+  }
+  
+  // Record tax payment in history
+  if (!player.league.luxuryTaxHistory) {
+    player.league.luxuryTaxHistory = {};
+  }
+  if (!player.league.luxuryTaxHistory[player.team]) {
+    player.league.luxuryTaxHistory[player.team] = [];
+  }
+  
+  player.league.luxuryTaxHistory[player.team].push({
+    season: player.season,
+    taxAmount: taxStatus.taxAmount,
+    totalPayroll: taxStatus.totalPayroll,
+    overage: taxStatus.overage,
+    isRepeatOffender: taxStatus.isRepeatOffender,
+    apronLevel: taxStatus.apronLevel
+  });
+  
+  // Keep only last 5 years of history
+  if (player.league.luxuryTaxHistory[player.team].length > 5) {
+    player.league.luxuryTaxHistory[player.team] = 
+      player.league.luxuryTaxHistory[player.team].slice(-5);
+  }
+}
+
+// Initialize luxury tax system for existing saves
+function initializeLuxuryTaxSystem(player) {
+  if (!player.league) {
+    player.league = {};
+  }
+  if (!player.league.luxuryTaxHistory) {
+    player.league.luxuryTaxHistory = {};
+  }
+}
+
 // Player Holdouts System Configuration
 const HOLDOUT_CONFIG = {
   // Conditions that can trigger holdouts
@@ -3445,6 +3991,12 @@ function newPlayer(custom){
     initializeRookieDevelopment(player);
   }
   
+  // Initialize veteran leadership system
+  initializeVeteranLeadership(player);
+  
+  // Initialize luxury tax system
+  initializeLuxuryTaxSystem(player);
+  
   return player;
 }
 
@@ -5345,6 +5897,43 @@ export default function BasketballLife(){
     } else if(p.phase==="Offseason"){
       // End season bookkeeping
       finalizeSeason(p);
+      
+      // Apply veteran leadership seasonal effects
+      if (p.veteranLeadership && p.teammates) {
+        const seasonContribution = {
+          season: p.season,
+          veteranRating: p.veteranLeadership.leadershipRating,
+          mentoredPlayers: 0,
+          teamImpact: 0
+        };
+        
+        // Count mentored players this season
+        if (p.veteranLeadership.mentorshipHistory.length > 0) {
+          const recentMentoring = p.veteranLeadership.mentorshipHistory[p.veteranLeadership.mentorshipHistory.length - 1];
+          seasonContribution.mentoredPlayers = recentMentoring.mentoredPlayers;
+        }
+        
+        // Calculate team impact
+        const teamEffects = calculateTeamVeteranEffects(p, p.teammates);
+        if (teamEffects) {
+          seasonContribution.teamImpact = teamEffects.cultureRating;
+        }
+        
+        p.veteranLeadership.seasonContributions.push(seasonContribution);
+        
+        // Keep only last 5 seasons
+        if (p.veteranLeadership.seasonContributions.length > 5) {
+          p.veteranLeadership.seasonContributions = p.veteranLeadership.seasonContributions.slice(-5);
+        }
+        
+        // Add timeline event for significant veteran contributions
+        if (seasonContribution.mentoredPlayers > 0 || seasonContribution.teamImpact > 0.3) {
+          p.career.timeline.push(event("Leadership", 
+            `Veteran leadership impact: mentored ${seasonContribution.mentoredPlayers} players, team culture rating ${Math.round(seasonContribution.teamImpact * 100)}`
+          ));
+        }
+      }
+      
       // New season start
       offSeasonMoves(p);
       p.season++; 
@@ -5428,6 +6017,34 @@ export default function BasketballLife(){
 
       // Initialize holdout system if needed
       initializeHoldoutSystem(p);
+      
+      // Initialize and update veteran leadership system
+      initializeVeteranLeadership(p);
+      updateVeteranLeadershipRating(p);
+      
+      // Apply veteran mentorship to teammates (weekly development boost)
+      if (p.teammates && p.teammates.length > 0) {
+        applyVeteranMentorship(p, p.teammates);
+        
+        // Calculate team veteran effects
+        const teamEffects = calculateTeamVeteranEffects(p, p.teammates);
+        if (teamEffects) {
+          // Apply team chemistry bonus from veteran leadership
+          p.teamChem = clamp(p.teamChem + teamEffects.chemistryBonus * 0.1, 0, 100);
+          
+          // Stabilize morale with veteran presence
+          if (p.morale < 70) {
+            p.morale = clamp(p.morale + teamEffects.moraleStability, 0, 100);
+          }
+          
+          // Track veteran contributions for timeline
+          if (p.week % 4 === 0 && teamEffects.veteranCount > 0) { // Monthly updates
+            p.career.timeline.push(event("Leadership", 
+              `Veteran presence improving team culture (${teamEffects.veteranCount} leaders, ${teamEffects.averageLeadership} avg rating)`
+            ));
+          }
+        }
+      }
       
       // Check for potential holdout initiation
       if (!p.holdoutStatus.isHoldingOut) {
@@ -5666,6 +6283,20 @@ export default function BasketballLife(){
       const mockTeammates = [p]; // In full game would be actual teammates
       const chemistryBonus = getChemistryPerformanceBonus(p, mockTeammates);
       performanceModifier *= chemistryBonus;
+      
+      // Apply veteran leadership team effects
+      const teamVeteranEffects = calculateTeamVeteranEffects(p, p.teammates || []);
+      if (teamVeteranEffects) {
+        // Clutch performance bonus in important situations
+        const isImportantGame = p.phase === "Playoffs" || (p.stats?.wins || 0) + (p.stats?.losses || 0) > 70; // Late season or playoffs
+        if (isImportantGame) {
+          performanceModifier *= (1 + teamVeteranEffects.clutchBonus);
+        }
+        
+        // Overall veteran presence bonus
+        const veteranPresenceBonus = 1 + (teamVeteranEffects.cultureRating * 0.05); // Up to 7.5% bonus
+        performanceModifier *= veteranPresenceBonus;
+      }
       
       // Apply holdout performance impact
       performanceModifier *= holdoutImpact;
@@ -5917,6 +6548,29 @@ export default function BasketballLife(){
     t.per.push(avg.per || 0);
     t.ts.push(avg.ts || 0);
     t.usage.push(avg.usage || 0);
+
+    // Initialize and calculate luxury tax for the season
+    initializeLuxuryTaxSystem(p);
+    const taxStatus = getTeamLuxuryTaxStatus(p);
+    if (taxStatus) {
+      applyLuxuryTaxEffects(p, taxStatus);
+      
+      // Add luxury tax information to career timeline
+      if (taxStatus.taxAmount > 0) {
+        const taxMessage = taxStatus.isRepeatOffender ? 
+          `Team paid $${Math.round(taxStatus.taxAmount)}M luxury tax (repeat offender penalty)` :
+          `Team paid $${Math.round(taxStatus.taxAmount)}M luxury tax`;
+        p.career.timeline.push(event("Finances", taxMessage));
+        
+        // Add apron restrictions warning
+        if (taxStatus.apronLevel > 0) {
+          const apronMessage = taxStatus.apronLevel === 2 ? 
+            "Team hit second apron - severe roster restrictions apply" :
+            "Team hit first apron - roster building restrictions apply";
+          p.career.timeline.push(event("Restrictions", apronMessage));
+        }
+      }
+    }
 
     // accolades story
     if(awards.length){ p.career.timeline.push(event("Awards", `Season ${p.season} awards: ${awards.join(", ")}`)); }
@@ -9172,6 +9826,41 @@ function TeamPanel({ game, avg, onTrade, onContract }){
           <button className="btn btn-secondary btn-sm" onClick={onTrade}>Request Trade</button>
         </div>
         
+        {/* Luxury Tax Status */}
+        {(() => {
+          const totalPayroll = (game.contract?.salary || 0) + 
+            (game.teammates || []).reduce((sum, teammate) => sum + (teammate.salary || 0), 0);
+          const taxHistory = game.league?.luxuryTaxHistory?.[game.team] || [];
+          const taxStatus = calculateLuxuryTax(totalPayroll, taxHistory);
+          
+          if (totalPayroll > LUXURY_TAX_CONFIG.salaryCap) {
+            return (
+              <div style={{marginTop: '12px', padding: '10px', background: totalPayroll > LUXURY_TAX_CONFIG.luxuryTaxLine ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)', borderRadius: '8px', border: totalPayroll > LUXURY_TAX_CONFIG.luxuryTaxLine ? '1px solid rgba(239,68,68,0.3)' : '1px solid rgba(245,158,11,0.3)'}}>
+                <div style={{fontSize: '13px', fontWeight: 'bold', marginBottom: '6px', color: totalPayroll > LUXURY_TAX_CONFIG.luxuryTaxLine ? '#ef4444' : '#f59e0b'}}>
+                  💰 {totalPayroll > LUXURY_TAX_CONFIG.luxuryTaxLine ? 'Luxury Tax Team' : 'Over Salary Cap'}
+                </div>
+                <div style={{fontSize: '11px', marginBottom: '4px'}}>
+                  <div>Payroll: {formatMoney(totalPayroll)}</div>
+                  {taxStatus.taxAmount > 0 && (
+                    <>
+                      <div>Tax Bill: {formatMoney(taxStatus.taxAmount)}</div>
+                      {taxStatus.isRepeatOffender && (
+                        <div style={{color: '#dc2626'}}>⚠️ Repeat Offender</div>
+                      )}
+                      {taxStatus.apronLevel > 0 && (
+                        <div style={{color: '#dc2626'}}>
+                          🚫 {taxStatus.apronLevel === 2 ? 'Second' : 'First'} Apron
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          }
+          return null;
+        })()}
+        
         {/* Holdout Status */}
         {game.holdoutStatus?.isHoldingOut && (
           <div style={{marginTop: '12px', padding: '12px', background: 'rgba(239,68,68,0.1)', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.3)'}}>
@@ -9789,6 +10478,353 @@ function AnalyticsPanel({ game }){
             Complete seasons to unlock advanced metrics
           </div>
         )}
+      </div>
+
+      {/* Veteran Leadership Analytics */}
+      {game.age >= 27 && game.veteranLeadership && (
+        <div className="panel">
+          <h3 style={{marginBottom: '16px', color: 'var(--team-primary)'}}>🎖️ Veteran Leadership</h3>
+          
+          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px'}}>
+            {/* Leadership Profile */}
+            <div style={{padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px'}}>
+              <h4 style={{margin: '0 0 8px 0', fontSize: '14px'}}>Leadership Profile</h4>
+              <div style={{fontSize: '12px', gap: '4px', display: 'flex', flexDirection: 'column'}}>
+                <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                  <span>Status:</span>
+                  <span style={{
+                    fontWeight: 'bold',
+                    color: game.veteranLeadership.veteranStatus === 'veteran' || game.veteranLeadership.veteranStatus === 'elder' ? '#10b981' :
+                           game.veteranLeadership.veteranStatus === 'prime' ? '#f59e0b' : '#6b7280',
+                    textTransform: 'capitalize'
+                  }}>
+                    {game.veteranLeadership.veteranStatus}
+                  </span>
+                </div>
+                <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                  <span>Leadership Rating:</span>
+                  <span style={{
+                    fontWeight: 'bold',
+                    color: game.veteranLeadership.leadershipRating >= 80 ? '#10b981' :
+                           game.veteranLeadership.leadershipRating >= 60 ? '#f59e0b' : '#ef4444'
+                  }}>
+                    {Math.round(game.veteranLeadership.leadershipRating)}/100
+                  </span>
+                </div>
+                <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                  <span>Mentoring Ability:</span>
+                  <span>{(game.veteranLeadership.mentoringAbility * 100).toFixed(1)}%</span>
+                </div>
+                <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                  <span>Culture Impact:</span>
+                  <span>{(game.veteranLeadership.cultureImpact || 0).toFixed(1)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Mentorship History */}
+            <div style={{padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px'}}>
+              <h4 style={{margin: '0 0 8px 0', fontSize: '14px'}}>Mentorship History</h4>
+              {game.veteranLeadership.mentorshipHistory && game.veteranLeadership.mentorshipHistory.length > 0 ? (
+                <div style={{fontSize: '12px', gap: '6px', display: 'flex', flexDirection: 'column'}}>
+                  {game.veteranLeadership.mentorshipHistory.slice(-3).map((record, idx) => (
+                    <div key={idx} style={{
+                      display: 'flex', 
+                      justifyContent: 'space-between',
+                      padding: '4px 8px',
+                      background: 'var(--bg-tertiary)',
+                      borderRadius: '4px'
+                    }}>
+                      <span>Season {record.season}:</span>
+                      <span style={{fontWeight: 'bold', color: '#22c55e'}}>
+                        {record.mentoredPlayers} players
+                      </span>
+                    </div>
+                  ))}
+                  
+                  <div style={{marginTop: '8px', fontSize: '11px', opacity: '0.8'}}>
+                    <div>Total Career Mentoring: {
+                      game.veteranLeadership.mentorshipHistory.reduce((sum, record) => sum + record.mentoredPlayers, 0)
+                    } players</div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{fontSize: '12px', opacity: '0.6', textAlign: 'center'}}>
+                  No mentorship activity yet
+                </div>
+              )}
+            </div>
+
+            {/* Team Impact */}
+            <div style={{padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px'}}>
+              <h4 style={{margin: '0 0 8px 0', fontSize: '14px'}}>Team Impact</h4>
+              {(() => {
+                const teamEffects = calculateTeamVeteranEffects(game, game.teammates || []);
+                return teamEffects ? (
+                  <div style={{fontSize: '12px', gap: '4px', display: 'flex', flexDirection: 'column'}}>
+                    <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                      <span>Team Veterans:</span>
+                      <span>{teamEffects.veteranCount}</span>
+                    </div>
+                    <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                      <span>Avg Leadership:</span>
+                      <span>{teamEffects.averageLeadership}</span>
+                    </div>
+                    <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                      <span>Chemistry Bonus:</span>
+                      <span style={{color: '#10b981'}}>+{teamEffects.chemistryBonus.toFixed(1)}</span>
+                    </div>
+                    <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                      <span>Culture Rating:</span>
+                      <span style={{color: '#fbbf24'}}>{(teamEffects.cultureRating * 100).toFixed(0)}%</span>
+                    </div>
+                    <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                      <span>Clutch Bonus:</span>
+                      <span style={{color: '#ef4444'}}>+{(teamEffects.clutchBonus * 100).toFixed(1)}%</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{fontSize: '12px', opacity: '0.6', textAlign: 'center'}}>
+                    No veteran leadership on team
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Leadership Growth */}
+            <div style={{padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px'}}>
+              <h4 style={{margin: '0 0 8px 0', fontSize: '14px'}}>Leadership Growth</h4>
+              {game.veteranLeadership.leadershipGrowth && game.veteranLeadership.leadershipGrowth.length > 0 ? (
+                <div style={{fontSize: '12px', gap: '6px', display: 'flex', flexDirection: 'column'}}>
+                  {game.veteranLeadership.leadershipGrowth.slice(-3).map((growth, idx) => (
+                    <div key={idx} style={{
+                      display: 'flex', 
+                      justifyContent: 'space-between',
+                      padding: '4px 8px',
+                      background: growth.change > 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                      borderRadius: '4px'
+                    }}>
+                      <span>Season {growth.season}:</span>
+                      <span style={{
+                        fontWeight: 'bold',
+                        color: growth.change > 0 ? '#10b981' : '#ef4444'
+                      }}>
+                        {growth.change > 0 ? '+' : ''}{growth.change.toFixed(1)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{fontSize: '12px', opacity: '0.6', textAlign: 'center'}}>
+                  Continue playing to track growth
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Season Contributions */}
+          {game.veteranLeadership.seasonContributions && game.veteranLeadership.seasonContributions.length > 0 && (
+            <div style={{marginTop: '16px', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px'}}>
+              <h4 style={{margin: '0 0 12px 0', fontSize: '14px'}}>Season Contributions</h4>
+              <div style={{display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '8px'}}>
+                {game.veteranLeadership.seasonContributions.slice(-5).map((contribution, idx) => (
+                  <div key={idx} style={{
+                    minWidth: '120px',
+                    padding: '8px',
+                    background: 'var(--bg-tertiary)',
+                    borderRadius: '6px',
+                    textAlign: 'center',
+                    border: contribution.teamImpact > 0.5 ? '2px solid #10b981' : '1px solid transparent'
+                  }}>
+                    <div style={{fontSize: '12px', fontWeight: 'bold'}}>Season {contribution.season}</div>
+                    <div style={{fontSize: '11px', opacity: '0.8'}}>Rating: {Math.round(contribution.veteranRating)}</div>
+                    <div style={{
+                      fontSize: '14px', 
+                      fontWeight: 'bold', 
+                      margin: '4px 0',
+                      color: contribution.mentoredPlayers > 0 ? '#10b981' : '#6b7280'
+                    }}>
+                      {contribution.mentoredPlayers} mentored
+                    </div>
+                    <div style={{fontSize: '10px', opacity: '0.7'}}>
+                      Impact: {(contribution.teamImpact * 100).toFixed(0)}%
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Luxury Tax Analytics */}
+      <div className="panel">
+        <h3 style={{marginBottom: '16px', color: 'var(--team-primary)'}}>💰 Team Financial Impact</h3>
+        
+        {(() => {
+          const totalPayroll = (game.contract?.salary || 0) + 
+            (game.teammates || []).reduce((sum, teammate) => sum + (teammate.salary || 0), 0);
+          const taxHistory = game.league?.luxuryTaxHistory?.[game.team] || [];
+          const taxStatus = calculateLuxuryTax(totalPayroll, taxHistory);
+          
+          return (
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px'}}>
+              {/* Current Payroll Status */}
+              <div style={{padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px'}}>
+                <h4 style={{margin: '0 0 8px 0', fontSize: '14px'}}>Current Payroll</h4>
+                <div style={{fontSize: '12px', gap: '6px', display: 'flex', flexDirection: 'column'}}>
+                  <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                    <span>Total Payroll:</span>
+                    <span style={{
+                      fontWeight: 'bold',
+                      color: totalPayroll > LUXURY_TAX_CONFIG.luxuryTaxLine ? '#ef4444' :
+                             totalPayroll > LUXURY_TAX_CONFIG.salaryCap ? '#f59e0b' : '#10b981'
+                    }}>
+                      {formatMoney(totalPayroll)}
+                    </span>
+                  </div>
+                  <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                    <span>Your Salary:</span>
+                    <span style={{fontWeight: 'bold', color: '#22c55e'}}>
+                      {formatMoney(game.contract?.salary || 0)}
+                    </span>
+                  </div>
+                  <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                    <span>Salary Cap ({formatMoney(LUXURY_TAX_CONFIG.salaryCap)}):</span>
+                    <span style={{
+                      color: totalPayroll > LUXURY_TAX_CONFIG.salaryCap ? '#ef4444' : '#10b981'
+                    }}>
+                      {totalPayroll > LUXURY_TAX_CONFIG.salaryCap ? 
+                        `+${formatMoney(totalPayroll - LUXURY_TAX_CONFIG.salaryCap)}` : 
+                        `-${formatMoney(LUXURY_TAX_CONFIG.salaryCap - totalPayroll)}`}
+                    </span>
+                  </div>
+                  <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                    <span>Tax Line ({formatMoney(LUXURY_TAX_CONFIG.luxuryTaxLine)}):</span>
+                    <span style={{
+                      color: totalPayroll > LUXURY_TAX_CONFIG.luxuryTaxLine ? '#ef4444' : '#10b981'
+                    }}>
+                      {totalPayroll > LUXURY_TAX_CONFIG.luxuryTaxLine ? 
+                        `+${formatMoney(totalPayroll - LUXURY_TAX_CONFIG.luxuryTaxLine)}` : 
+                        `-${formatMoney(LUXURY_TAX_CONFIG.luxuryTaxLine - totalPayroll)}`}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Luxury Tax Details */}
+              <div style={{padding: '12px', background: taxStatus.taxAmount > 0 ? 'rgba(239, 68, 68, 0.05)' : 'var(--bg-secondary)', borderRadius: '8px', border: taxStatus.taxAmount > 0 ? '1px solid rgba(239, 68, 68, 0.2)' : 'none'}}>
+                <h4 style={{margin: '0 0 8px 0', fontSize: '14px', color: taxStatus.taxAmount > 0 ? '#ef4444' : 'inherit'}}>
+                  Luxury Tax Status
+                </h4>
+                <div style={{fontSize: '12px', gap: '6px', display: 'flex', flexDirection: 'column'}}>
+                  <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                    <span>Tax Amount:</span>
+                    <span style={{
+                      fontWeight: 'bold',
+                      color: taxStatus.taxAmount > 0 ? '#ef4444' : '#10b981'
+                    }}>
+                      {taxStatus.taxAmount > 0 ? formatMoney(taxStatus.taxAmount) : '$0M'}
+                    </span>
+                  </div>
+                  {taxStatus.taxAmount > 0 && (
+                    <>
+                      <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                        <span>Effective Rate:</span>
+                        <span style={{color: '#ef4444'}}>{(taxStatus.taxRate * 100).toFixed(1)}%</span>
+                      </div>
+                      <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                        <span>Repeat Offender:</span>
+                        <span style={{color: taxStatus.isRepeatOffender ? '#dc2626' : '#10b981'}}>
+                          {taxStatus.isRepeatOffender ? 'Yes' : 'No'}
+                        </span>
+                      </div>
+                      {taxStatus.apronLevel > 0 && (
+                        <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                          <span>Apron Level:</span>
+                          <span style={{color: '#dc2626'}}>
+                            {taxStatus.apronLevel === 2 ? 'Second' : 'First'}
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+                
+                {taxStatus.taxAmount > 0 && taxStatus.breakdown && (
+                  <div style={{marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(107, 114, 128, 0.2)'}}>
+                    <div style={{fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', opacity: '0.8'}}>
+                      Tax Breakdown:
+                    </div>
+                    {taxStatus.breakdown.map((bracket, idx) => (
+                      <div key={idx} style={{fontSize: '10px', display: 'flex', justifyContent: 'space-between', opacity: '0.7'}}>
+                        <span>{bracket.range}:</span>
+                        <span>{formatMoney(bracket.tax)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              {/* Roster Restrictions */}
+              {taxStatus.apronLevel > 0 && (
+                <div style={{padding: '12px', background: 'rgba(220, 38, 38, 0.05)', borderRadius: '8px', border: '1px solid rgba(220, 38, 38, 0.2)'}}>
+                  <h4 style={{margin: '0 0 8px 0', fontSize: '14px', color: '#dc2626'}}>
+                    Roster Restrictions
+                  </h4>
+                  <div style={{fontSize: '11px', gap: '4px', display: 'flex', flexDirection: 'column', color: '#dc2626'}}>
+                    {taxStatus.apronLevel === 1 ? (
+                      <>
+                        <div>• Reduced Mid-Level Exception</div>
+                        <div>• No Bi-Annual Exception</div>
+                        <div>• No Sign-and-Trade acquisitions</div>
+                        <div>• No Traded Player Exception use</div>
+                      </>
+                    ) : (
+                      <>
+                        <div>• No Mid-Level Exception</div>
+                        <div>• No exceptions available</div>
+                        <div>• Cannot trade future 1st picks</div>
+                        <div>• Severe trade limitations</div>
+                        <div>• Cannot sign free agents</div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              {/* Historical Tax Payments */}
+              {taxHistory.length > 0 && (
+                <div style={{padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px'}}>
+                  <h4 style={{margin: '0 0 8px 0', fontSize: '14px'}}>Tax History</h4>
+                  <div style={{fontSize: '11px', maxHeight: '120px', overflowY: 'auto'}}>
+                    {taxHistory.slice(-5).map((record, idx) => (
+                      <div key={idx} style={{
+                        display: 'flex', 
+                        justifyContent: 'space-between',
+                        padding: '3px 0',
+                        borderBottom: idx < taxHistory.slice(-5).length - 1 ? '1px solid rgba(107, 114, 128, 0.1)' : 'none'
+                      }}>
+                        <span>Season {record.season}:</span>
+                        <span style={{
+                          fontWeight: 'bold',
+                          color: record.taxAmount > 0 ? '#ef4444' : '#10b981'
+                        }}>
+                          {record.taxAmount > 0 ? formatMoney(record.taxAmount) : '$0M'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  {taxHistory.filter(r => r.taxAmount > 0).length >= 3 && (
+                    <div style={{fontSize: '10px', color: '#dc2626', marginTop: '6px', textAlign: 'center', opacity: '0.8'}}>
+                      ⚠️ Repeat Offender Status Active
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Rookie Development Analytics */}
@@ -12202,21 +13238,71 @@ function TeamOwnershipPanel({ game, onManageTeam }) {
                       <h5>💰 Financial Status</h5>
                       <div className="stat-box">
                         <div className="stat-label">Total Payroll</div>
-                        <div className="stat-value" style={{color: team.roster.reduce((sum, p) => sum + p.salary, 0) > 140 ? '#ef4444' : '#10b981'}}>
+                        <div className="stat-value" style={{color: team.roster.reduce((sum, p) => sum + p.salary, 0) > LUXURY_TAX_CONFIG.luxuryTaxLine ? '#ef4444' : team.roster.reduce((sum, p) => sum + p.salary, 0) > LUXURY_TAX_CONFIG.salaryCap ? '#f59e0b' : '#10b981'}}>
                           {formatMoney(team.roster.reduce((sum, p) => sum + p.salary, 0))}
                         </div>
                       </div>
-                      <div className="stat-box">
-                        <div className="stat-label">Luxury Tax</div>
-                        <div className="stat-value" style={{color: '#ef4444'}}>
-                          {team.roster.reduce((sum, p) => sum + p.salary, 0) > 140 ? 
-                            formatMoney((team.roster.reduce((sum, p) => sum + p.salary, 0) - 140) * 3) : '$0M'}
-                        </div>
-                      </div>
-                      <div className="stat-box">
-                        <div className="stat-label">Salary Cap Space</div>
-                        <div className="stat-value">{formatMoney(Math.max(0, 140 - team.roster.reduce((sum, p) => sum + p.salary, 0)))}</div>
-                      </div>
+                      
+                      {(() => {
+                        const totalPayroll = team.roster.reduce((sum, p) => sum + p.salary, 0);
+                        const taxHistory = game.league?.luxuryTaxHistory?.[team.name] || [];
+                        const taxStatus = calculateLuxuryTax(totalPayroll, taxHistory);
+                        
+                        return (
+                          <>
+                            <div className="stat-box">
+                              <div className="stat-label">Luxury Tax</div>
+                              <div className="stat-value" style={{color: taxStatus.taxAmount > 0 ? '#ef4444' : '#10b981'}}>
+                                {taxStatus.taxAmount > 0 ? formatMoney(taxStatus.taxAmount) : '$0M'}
+                              </div>
+                            </div>
+                            
+                            {taxStatus.isRepeatOffender && (
+                              <div className="stat-box">
+                                <div className="stat-label">Repeat Offender</div>
+                                <div className="stat-value" style={{color: '#dc2626', fontSize: '0.8rem'}}>
+                                  YES
+                                </div>
+                              </div>
+                            )}
+                            
+                            {taxStatus.apronLevel > 0 && (
+                              <div className="stat-box">
+                                <div className="stat-label">Apron Level</div>
+                                <div className="stat-value" style={{color: '#dc2626', fontSize: '0.8rem'}}>
+                                  {taxStatus.apronLevel === 2 ? 'Second Apron' : 'First Apron'}
+                                </div>
+                              </div>
+                            )}
+                            
+                            <div className="stat-box">
+                              <div className="stat-label">Salary Cap Space</div>
+                              <div className="stat-value" style={{color: totalPayroll > LUXURY_TAX_CONFIG.salaryCap ? '#ef4444' : '#10b981'}}>
+                                {formatMoney(Math.max(0, LUXURY_TAX_CONFIG.salaryCap - totalPayroll))}
+                              </div>
+                            </div>
+                            
+                            {taxStatus.taxAmount > 0 && (
+                              <div style={{marginTop: '1rem', padding: '0.8rem', background: 'rgba(220, 38, 38, 0.1)', borderRadius: '8px', border: '1px solid rgba(220, 38, 38, 0.3)'}}>
+                                <div style={{fontSize: '0.8rem', color: '#dc2626', fontWeight: 'bold', marginBottom: '0.5rem'}}>
+                                  Tax Breakdown:
+                                </div>
+                                <div style={{fontSize: '0.7rem', color: '#6b7280'}}>
+                                  ${Math.round(taxStatus.overage)}M over threshold
+                                </div>
+                                <div style={{fontSize: '0.7rem', color: '#6b7280'}}>
+                                  Effective rate: {(taxStatus.taxRate * 100).toFixed(1)}%
+                                </div>
+                                {taxStatus.restrictions && Object.keys(taxStatus.restrictions).length > 0 && (
+                                  <div style={{fontSize: '0.7rem', color: '#dc2626', marginTop: '0.3rem'}}>
+                                    ⚠️ Roster restrictions active
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                     
                     <div className="panel" style={{padding: '1.5rem'}}>
